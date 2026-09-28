@@ -5,12 +5,6 @@ using System.Windows.Forms;
 
 public static class P2PDeskNative {
     [StructLayout(LayoutKind.Sequential)]
-    public struct INPUT {
-        public uint type;
-        public MOUSEINPUT mi;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
     public struct MOUSEINPUT {
         public int dx;
         public int dy;
@@ -20,10 +14,33 @@ public static class P2PDeskNative {
         public IntPtr dwExtraInfo;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct KEYBDINPUT {
+        public ushort wVk;
+        public ushort wScan;
+        public uint dwFlags;
+        public uint time;
+        public IntPtr dwExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Explicit)]
+    public struct INPUT_UNION {
+        [FieldOffset(0)]
+        public MOUSEINPUT mi;
+        [FieldOffset(0)]
+        public KEYBDINPUT ki;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct INPUT {
+        public uint type;
+        public INPUT_UNION u;
+    }
+
     [DllImport("user32.dll")]
     public static extern bool SetCursorPos(int X, int Y);
 
-    [DllImport("user32.dll")]
+    [DllImport("user32.dll", SetLastError = true)]
     public static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
 
     public const uint INPUT_MOUSE = 0;
@@ -39,45 +56,56 @@ public static class P2PDeskNative {
 
     public const uint KEYEVENTF_KEYUP = 0x0002;
 
-    public static void Mouse(int buttonFlags, int data = 0) {
+    public static void Mouse(uint flags, uint data = 0) {
         var input = new INPUT {
             type = INPUT_MOUSE,
-            mi = new MOUSEINPUT {
-                dx = 0,
-                dy = 0,
-                mouseData = (uint)data,
-                dwFlags = (uint)buttonFlags,
-                time = 0,
-                dwExtraInfo = IntPtr.Zero
+            u = new INPUT_UNION {
+                mi = new MOUSEINPUT {
+                    dx = 0,
+                    dy = 0,
+                    mouseData = data,
+                    dwFlags = flags,
+                    time = 0,
+                    dwExtraInfo = IntPtr.Zero
+                }
             }
         };
-        SendInput(1, new[] { input }, Marshal.SizeOf(typeof(INPUT)));
+        SendInput(
+            1,
+            new[] { input },
+            Marshal.SizeOf(typeof(INPUT))
+        );
     }
 
-    public static void Key(int virtualKey, bool up) {
+    public static void Key(ushort virtualKey, bool up) {
         var input = new INPUT {
             type = INPUT_KEYBOARD,
-            mi = new MOUSEINPUT {
-                dx = virtualKey,
-                dy = 0,
-                mouseData = 0,
-                dwFlags = up ? KEYEVENTF_KEYUP : 0,
-                time = 0,
-                dwExtraInfo = IntPtr.Zero
+            u = new INPUT_UNION {
+                ki = new KEYBDINPUT {
+                    wVk = virtualKey,
+                    wScan = 0,
+                    dwFlags = up ? KEYEVENTF_KEYUP : 0,
+                    time = 0,
+                    dwExtraInfo = IntPtr.Zero
+                }
             }
         };
-        SendInput(1, new[] { input }, Marshal.SizeOf(typeof(INPUT)));
+        SendInput(
+            1,
+            new[] { input },
+            Marshal.SizeOf(typeof(INPUT))
+        );
     }
 }
 "@
 
 function Get-VirtualKey([string]$code) {
     if ($code -match '^Key([A-Z])$') {
-        return [int][System.Windows.Forms.Keys]::$($Matches[1])
+        return [int][System.Windows.Forms.Keys]$Matches[1]
     }
 
     if ($code -match '^Digit([0-9])$') {
-        return [int][System.Windows.Forms.Keys]::($("D" + $Matches[1]))
+        return [int]([Enum]::Parse([System.Windows.Forms.Keys], "D" + $Matches[1]))
     }
 
     $map = @{
@@ -132,52 +160,71 @@ while ($line = [Console]::ReadLine()) {
         switch ($packet.type) {
             "mouse_move" {
                 $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-                $x = [Math]::Max($screen.Left, [Math]::Min($screen.Right - 1, [Math]::Round($packet.x * $screen.Width)))
-                $y = [Math]::Max($screen.Top, [Math]::Min($screen.Bottom - 1, [Math]::Round($packet.y * $screen.Height)))
+                $x = [Math]::Max(
+                    $screen.Left,
+                    [Math]::Min(
+                        $screen.Right - 1,
+                        [Math]::Round($packet.x * $screen.Width)
+                    )
+                )
+                $y = [Math]::Max(
+                    $screen.Top,
+                    [Math]::Min(
+                        $screen.Bottom - 1,
+                        [Math]::Round($packet.y * $screen.Height)
+                    )
+                )
                 [P2PDeskNative]::SetCursorPos($x, $y) | Out-Null
             }
-            "mouse_button" {
-                $leftDown = [int][P2PDeskNative]::MOUSEEVENTF_LEFTDOWN
-                $leftUp = [int][P2PDeskNative]::MOUSEEVENTF_LEFTUP
-                $middleDown = [int][P2PDeskNative]::MOUSEEVENTF_MIDDLEDOWN
-                $middleUp = [int][P2PDeskNative]::MOUSEEVENTF_MIDDLEUP
-                $rightDown = [int][P2PDeskNative]::MOUSEEVENTF_RIGHTDOWN
-                $rightUp = [int][P2PDeskNative]::MOUSEEVENTF_RIGHTUP
 
+            "mouse_button" {
                 $down = switch ($packet.button) {
-                    "left" { $leftDown }
-                    "middle" { $middleDown }
-                    "right" { $rightDown }
+                    "left"   { [P2PDeskNative]::MOUSEEVENTF_LEFTDOWN }
+                    "middle" { [P2PDeskNative]::MOUSEEVENTF_MIDDLEDOWN }
+                    "right"  { [P2PDeskNative]::MOUSEEVENTF_RIGHTDOWN }
                     default { 0 }
                 }
 
                 $up = switch ($packet.button) {
-                    "left" { $leftUp }
-                    "middle" { $middleUp }
-                    "right" { $rightUp }
+                    "left"   { [P2PDeskNative]::MOUSEEVENTF_LEFTUP }
+                    "middle" { [P2PDeskNative]::MOUSEEVENTF_MIDDLEUP }
+                    "right"  { [P2PDeskNative]::MOUSEEVENTF_RIGHTUP }
                     default { 0 }
                 }
 
-                if ($down -and $packet.action -in @("down","double")) {
+                if ($down -and $packet.action -eq "down") {
                     [P2PDeskNative]::Mouse($down)
                 }
-                if ($up -and $packet.action -in @("up","double")) {
+                elseif ($up -and $packet.action -eq "up") {
                     [P2PDeskNative]::Mouse($up)
                 }
-                if ($packet.action -eq "double") {
+                elseif ($down -and $up -and $packet.action -eq "double") {
+                    [P2PDeskNative]::Mouse($down)
+                    [P2PDeskNative]::Mouse($up)
                     Start-Sleep -Milliseconds 45
                     [P2PDeskNative]::Mouse($down)
                     [P2PDeskNative]::Mouse($up)
                 }
             }
+
             "scroll" {
-                $wheel = [int][Math]::Max(-1200, [Math]::Min(1200, -$packet.deltaY))
-                [P2PDeskNative]::Mouse([P2PDeskNative]::MOUSEEVENTF_WHEEL, $wheel)
+                $wheel = [int][Math]::Max(
+                    -1200,
+                    [Math]::Min(1200, -$packet.deltaY)
+                )
+                [P2PDeskNative]::Mouse(
+                    [P2PDeskNative]::MOUSEEVENTF_WHEEL,
+                    [uint32]$wheel
+                )
             }
+
             "keyboard" {
                 $vk = Get-VirtualKey $packet.code
                 if ($vk -ne 0) {
-                    [P2PDeskNative]::Key($vk, $packet.action -eq "up")
+                    [P2PDeskNative]::Key(
+                        [uint16]$vk,
+                        $packet.action -eq "up"
+                    )
                 }
             }
         }
