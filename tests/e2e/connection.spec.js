@@ -40,7 +40,7 @@ test("two browser pages connect by code, deliver screen, grant/revoke control, a
     });
   });
 
-  await host.goto("/?signal=ws%3A%2F%2F127.0.0.1%3A4174");
+  await host.goto("/?signal=ws%3A%2F%2F127.0.0.1%3A4174&agent=ws%3A%2F%2F127.0.0.1%3A4175");
   await expect(host.locator("[data-action='create-host']").first()).toBeVisible();
   await host.locator("[data-action='create-host']").first().click();
 
@@ -130,6 +130,16 @@ test("two browser pages connect by code, deliver screen, grant/revoke control, a
   await expect(host.locator("#consentBanner")).toBeVisible({ timeout: 10_000 });
   await host.locator("[data-action='approve-control']").click();
   await expect(controller.locator("#peerSubtext")).toContainText("Full control granted", { timeout: 10_000 });
+  await expect(host.locator("#nativeStatus")).toHaveText("CONNECTED", { timeout: 10_000 });
+
+  await controller.locator("#remoteVideo").dispatchEvent("pointermove", {
+    clientX: 320,
+    clientY: 180
+  });
+  await expect.poll(async () => {
+    const response = await host.evaluate(() => fetch("/agent-events").then((r) => r.json()));
+    return response.count;
+  }).toBeGreaterThan(0);
 
   await host.locator("[data-action='control']").click();
   await expect(controller.locator("#peerSubtext")).toContainText("view-only", { timeout: 10_000 });
