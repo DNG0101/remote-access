@@ -1,4 +1,5 @@
 import { PeerSession } from "./webrtc.js";
+import { NativeAgentClient } from "./agent-client.js";
 import {
   validateInputMessage,
   validateControlMessage,
@@ -31,7 +32,9 @@ const state = {
   outgoingFile: null,
   peerCapabilities: null,
   incomingClipboard: null,
-  completedFile: null
+  completedFile: null,
+  nativeAgent: null,
+  nativeAgentWarned: false
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -146,6 +149,11 @@ function resetModules() {
 
   setModuleStatus("chatStatus", "OFFLINE");
   setModuleStatus("fileStatus", "READY");
+  setModuleStatus("nativeStatus", "OFFLINE");
+  if ($("#nativeMessage")) {
+    $("#nativeMessage").textContent =
+      "Optional local agent for real PC mouse and keyboard control. The browser remains the consent boundary.";
+  }
   $("#fileProgress")?.classList.add("hidden");
   $("#fileOffer")?.classList.add("hidden");
   if ($("#fileInput")) $("#fileInput").value = "";
@@ -465,7 +473,7 @@ function sendCapabilities(session) {
     clipboard: Boolean(navigator.clipboard),
     fileTransfer: true,
     chat: true,
-    nativeInput: false
+    nativeInput: Boolean(state.nativeAgent?.capabilities?.nativeInput)
   };
 
   if (validateTelemetryMessage(message)) {
@@ -492,6 +500,63 @@ function resetSessionUi() {
   state.activeControlRequestId = null;
   resetModules();
   updateControlButton();
+}
+
+function setupNativeAgent(session) {
+  if (state.nativeAgent) {
+    try { state.nativeAgent.close(); } catch {}
+    state.nativeAgent = null;
+  }
+
+  state.nativeAgentWarned = false;
+
+  if (state.role !== "host" || !config.agentUrl) {
+    setModuleStatus("nativeStatus", "N/A");
+    return;
+  }
+
+  const agent = new NativeAgentClient({
+    url: config.agentUrl
+  });
+
+  state.nativeAgent = agent;
+  setModuleStatus("nativeStatus", "CONNECTING", "amber");
+
+  agent.on("state", (value) => {
+    if (value === "connected") {
+      setModuleStatus("nativeStatus", "CONNECTED", "green");
+      if ($("#nativeMessage")) {
+        $("#nativeMessage").textContent =
+          agent.capabilities.nativeInput
+            ? "Native OS mouse/keyboard input is available."
+            : "Agent connected, but native input is unavailable on this host.";
+      }
+      sendCapabilities(session);
+    } else if (value === "connecting") {
+      setModuleStatus("nativeStatus", "CONNECTING", "amber");
+    } else {
+      setModuleStatus("nativeStatus", "OFFLINE");
+    }
+  });
+
+  agent.on("capabilities", (capabilities) => {
+    if ($("#nativeMessage")) {
+      $("#nativeMessage").textContent =
+        capabilities.nativeInput
+          ? "Native OS mouse/keyboard input is available."
+          : "Agent connected, but native input is unavailable on this host.";
+    }
+    sendCapabilities(session);
+  });
+
+  agent.on("error", (detail) => {
+    setModuleStatus("nativeStatus", "OFFLINE", "red");
+    logEvent(detail.code || "native_agent_error", detail, "error");
+  });
+
+  agent.connect().catch(() => {
+    setModuleStatus("nativeStatus", "OFFLINE");
+  });
 }
 
 function createSession(role = "host", code = uid()) {
@@ -522,6 +587,7 @@ function createSession(role = "host", code = uid()) {
   });
 
   wireSession(state.session);
+  setupNativeAgent(state.session);
   $("#emptySession").classList.add("hidden");
   $("#activeSession").classList.remove("hidden");
   $("#sessionCodeDisplay").textContent = formatCode(state.code);
@@ -534,6 +600,7 @@ function createSession(role = "host", code = uid()) {
   $("#captureLabel").textContent = role === "host" ? "Share screen" : "Host screen";
   updateControlButton();
   updateClipboardButton();
+  setModuleStatus("nativeStatus", role === "host" ? "CONNECTING" : "N/A");
   setConnection("signaling", "amber");
   navigate("sessions");
 
@@ -722,6 +789,20 @@ function wireSession(session) {
         logEvent("input_rejected", { reason: "no_control_or_invalid" }, "error");
         return;
       }
+      if (
+        state.nativeAgent?.connected &&
+        state.nativeAgent.capabilities.nativeInput
+      ) {
+        const sentToAgent = state.nativeAgent.sendInput(message);
+        if (!sentToAgent) {
+          logEvent("native_input_send_failed", { type: message.type }, "error");
+        }
+      } else if (!state.nativeAgentWarned) {
+        state.nativeAgentWarned = true;
+        toast("Control is granted, but no native host agent is connected. Browser control cannot operate the PC operating system.", "info");
+        setModuleStatus("nativeStatus", "REQUIRED", "amber");
+      }
+
       logEvent("input_received", { type: message.type });
       return;
     }
@@ -985,6 +1066,11 @@ async function disconnect() {
   const session = state.session;
   state.session = null;
   state.sessionStartedAt = 0;
+
+  if (state.nativeAgent) {
+    try { state.nativeAgent.close(); } catch {}
+    state.nativeAgent = null;
+  }
 
   if (session) {
     try {
