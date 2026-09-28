@@ -600,6 +600,7 @@ function createSession(role = "host", code = uid()) {
   updateControlButton();
   updateClipboardButton();
   setModuleStatus("nativeStatus", role === "host" ? "CONNECTING" : "N/A");
+  $("#mobileKeyboardPanel").classList.add("hidden");
   setConnection("signaling", "amber");
   navigate("sessions");
 
@@ -799,6 +800,30 @@ function wireSession(session) {
       } else if (!state.nativeAgentWarned) {
         state.nativeAgentWarned = true;
         toast("Control is granted, but no native host agent is connected. Browser control cannot operate the PC operating system.", "info");
+        setModuleStatus("nativeStatus", "REQUIRED", "amber");
+      }
+
+      const forwarded =
+        state.nativeAgent?.connected &&
+        state.nativeAgent.capabilities.nativeInput &&
+        state.nativeAgent.sendInput(message);
+
+      if (
+        state.nativeAgent?.connected &&
+        state.nativeAgent.capabilities.nativeInput &&
+        !forwarded
+      ) {
+        logEvent("native_input_send_failed", { type: message.type }, "error");
+      } else if (
+        !state.nativeAgentWarned &&
+        (!state.nativeAgent?.connected ||
+          !state.nativeAgent.capabilities.nativeInput)
+      ) {
+        state.nativeAgentWarned = true;
+        toast(
+          "Control is granted, but no native host agent is connected. Browser control cannot operate the PC operating system.",
+          "info"
+        );
         setModuleStatus("nativeStatus", "REQUIRED", "amber");
       }
 
@@ -1147,8 +1172,70 @@ function handlePointer(event) {
 }
 
 function sendInput(message) {
-  if (state.role !== "controller" || !state.controlGranted || !validateInputMessage(message)) return;
-  state.session?.send("input", message);
+  if (
+    state.role !== "controller" ||
+    !state.controlGranted ||
+    !validateInputMessage(message)
+  ) {
+    return false;
+  }
+
+  return Boolean(state.session?.send("input", message));
+}
+
+function openMobileKeyboard() {
+  if (state.role !== "controller" || !state.controlGranted) {
+    toast("Request and receive control before using the mobile keyboard.", "info");
+    return;
+  }
+
+  $("#mobileKeyboardPanel").classList.remove("hidden");
+  setTimeout(() => $("#mobileTextInput").focus(), 0);
+}
+
+function closeMobileKeyboard() {
+  $("#mobileKeyboardPanel").classList.add("hidden");
+  $("#mobileTextInput").blur();
+}
+
+function sendMobileText(text) {
+  const value = String(text || "");
+  if (!value) return;
+
+  const message = {
+    type: "text_input",
+    text: value,
+    timestamp: Date.now()
+  };
+
+  if (!sendInput(message)) {
+    toast("The mobile keyboard message could not be sent.", "error");
+    return;
+  }
+
+  $("#mobileTextInput").value = "";
+}
+
+function sendQuickKey(key, code) {
+  if (state.role !== "controller" || !state.controlGranted) return;
+
+  const down = {
+    type: "keyboard",
+    key,
+    code,
+    action: "down",
+    modifiers: [],
+    timestamp: Date.now()
+  };
+
+  const up = {
+    ...down,
+    action: "up",
+    timestamp: Date.now()
+  };
+
+  sendInput(down);
+  sendInput(up);
 }
 
 function modifierNames(event) {
@@ -1223,6 +1310,21 @@ function bindEvents() {
       return;
     }
     copy(url, "Invite link");
+  });
+
+  $("[data-action='mobile-keyboard']").addEventListener("click", openMobileKeyboard);
+  $("[data-action='close-keyboard']").addEventListener("click", closeMobileKeyboard);
+  $("[data-action='send-mobile-text']").addEventListener("click", () => {
+    sendMobileText($("#mobileTextInput").value);
+  });
+  $("#mobileTextInput").addEventListener("input", (event) => {
+    const value = event.target.value;
+    if (value) sendMobileText(value);
+  });
+  $(".quick-key-row [data-mobile-key]").forEach((button) => {
+    button.addEventListener("click", () => {
+      sendQuickKey(button.dataset.mobileKey, button.dataset.mobileCode);
+    });
   });
 
   $("[data-action='send-file']").addEventListener("click", () => {
@@ -1329,7 +1431,28 @@ function bindEvents() {
   });
 
   $("#remoteVideo").addEventListener("pointermove", handlePointer);
-  $("#remoteVideo").addEventListener("pointerdown", (event) => sendInput({
+  $("#remoteVideo").addEventListener("pointerdown", (event) => {
+    try { event.currentTarget.setPointerCapture?.(event.pointerId); } catch {}
+    sendInput({
+      type: "mouse_button",
+      button: event.button === 2 ? "right" : event.button === 1 ? "middle" : "left",
+      action: "down",
+      timestamp: Date.now()
+    });
+  });
+  $("#remoteVideo").addEventListener("pointercancel", (event) => {
+    try { event.currentTarget.releasePointerCapture?.(event.pointerId); } catch {}
+  });
+  $("#remoteVideo").addEventListener("pointerup", (event) => {
+    try { event.currentTarget.releasePointerCapture?.(event.pointerId); } catch {}
+    sendInput({
+      type: "mouse_button",
+      button: event.button === 2 ? "right" : event.button === 1 ? "middle" : "left",
+      action: "up",
+      timestamp: Date.now()
+    });
+  });
+  $("#remoteVideo").addEventListener("dblclick", () => sendInput({
     type: "mouse_button",
     button: event.button === 2 ? "right" : event.button === 1 ? "middle" : "left",
     action: "down",
