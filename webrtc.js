@@ -297,11 +297,11 @@ export class PeerSession extends EventTarget {
     if (this.closed) return false;
 
     const message = {
+      ...payload,
       roomId: this.code,
       from: this.peerId,
       to: to || null,
-      sentAt: Date.now(),
-      ...payload
+      sentAt: Date.now()
     };
 
     const validation = validateSignalMessage(message);
@@ -808,6 +808,10 @@ export class PeerSession extends EventTarget {
 
     this.channels.set(channel.label, channel);
     channel.bufferedAmountLowThreshold = 64 * 1024;
+
+    channel.onbufferedamountlow = () => {
+      this.flushPendingMessages(channel.label);
+    };
 
     channel.onopen = () => {
       this.emit("channel", {

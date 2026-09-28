@@ -130,8 +130,12 @@ test("PeerSession discovers a peer from roster-style signaling", async () => {
     let joinedPeer = "";
     session.ensurePeerConnection = async () => null;
     session.on("message", ({ channel, data }) => {
-      if (channel === "system" && data.type === "peer_joined") {
-        joinedPeer = data.peerId;
+      let message = data;
+      if (typeof data === "string") {
+        try { message = JSON.parse(data); } catch {}
+      }
+      if (channel === "system" && message?.type === "peer_joined") {
+        joinedPeer = message.peerId;
       }
     });
 
@@ -204,6 +208,29 @@ test("chat, file, and telemetry modules validate their live message shapes", () 
       nativeInput: false
     }),
     true
+  );
+
+  assert.equal(
+    validateDataChannelMessage(
+      "clipboard",
+      JSON.stringify({
+        type: "clipboard_text",
+        text: "hello"
+      })
+    ),
+    true
+  );
+
+  assert.equal(
+    validateDataChannelMessage(
+      "clipboard",
+      JSON.stringify({
+        type: "control_request",
+        requestId: "bad-cross-channel",
+        requestedAt: now
+      })
+    ),
+    false
   );
 
   assert.equal(

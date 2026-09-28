@@ -693,12 +693,29 @@ function wireSession(session) {
     }
   });
 
-  session.on("track", ({ stream }) => {
+  session.on("track", ({ stream, track }) => {
     const video = $("#remoteVideo");
     video.srcObject = stream;
     video.classList.add("show");
     $("#videoPlaceholder").classList.add("hidden");
+    $("#videoTitle").textContent = "Remote screen";
     void video.play().catch(() => {});
+
+    if (track) {
+      track.addEventListener("ended", () => {
+        const liveVideoTracks =
+          stream.getVideoTracks?.().filter((item) => item.readyState === "live") || [];
+
+        if (liveVideoTracks.length) return;
+
+        video.srcObject = null;
+        video.classList.remove("show");
+        $("#videoPlaceholder").classList.remove("hidden");
+        $("#videoTitle").textContent = "Remote screen appears here";
+        logEvent("remote_screen_stopped", {});
+      }, { once: true });
+    }
+
     logEvent("remote_track", { tracks: stream.getTracks().length });
   });
 
@@ -1303,9 +1320,11 @@ function bindEvents() {
   $("[data-action='send-mobile-text']").addEventListener("click", () => {
     sendMobileText($("#mobileTextInput").value);
   });
-  $("#mobileTextInput").addEventListener("input", (event) => {
-    const value = event.target.value;
-    if (value) sendMobileText(value);
+  $("#mobileTextInput").addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.isComposing) {
+      event.preventDefault();
+      sendMobileText(event.currentTarget.value);
+    }
   });
   $(".quick-key-row [data-mobile-key]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -1418,6 +1437,7 @@ function bindEvents() {
 
   $("#remoteVideo").addEventListener("pointermove", handlePointer);
   $("#remoteVideo").addEventListener("pointerdown", (event) => {
+    event.currentTarget.focus?.();
     try { event.currentTarget.setPointerCapture?.(event.pointerId); } catch {}
     sendInput({
       type: "mouse_button",

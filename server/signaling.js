@@ -168,6 +168,8 @@ export function createSignalingServer({ port = PORT } = {}) {
     ips.set(ip, ipState);
 
     if (!withinRateLimit(ip, "socket")) {
+      ipState.sockets = Math.max(0, ipState.sockets - 1);
+      ips.set(ip, ipState);
       ws.close(4008, "Too many connections from this IP");
       return;
     }
@@ -266,6 +268,18 @@ export function createSignalingServer({ port = PORT } = {}) {
           rooms.set(roomId, room);
         }
 
+        if (
+          room.peers.size >= 2 &&
+          !room.peers.has(from)
+        ) {
+          sendServerError(
+            ws,
+            "SESSION_BUSY",
+            "This session already has two peers."
+          );
+          return;
+        }
+
         const duplicateRole = [...room.peers.values()].find(
           (existing) =>
             existing.id !== from &&
@@ -277,18 +291,6 @@ export function createSignalingServer({ port = PORT } = {}) {
             ws,
             "ROLE_CONFLICT",
             "A " + message.role + " is already connected to this session."
-          );
-          return;
-        }
-
-        if (
-          room.peers.size >= 2 &&
-          !room.peers.has(from)
-        ) {
-          sendServerError(
-            ws,
-            "SESSION_BUSY",
-            "This session already has two peers."
           );
           return;
         }

@@ -26,6 +26,9 @@ test("controller can join a session by six-digit room code", () => {
   assert.match(app, /NativeAgentClient/);
   assert.match(app, /data-action='mobile-keyboard'/);
   assert.match(app, /type: "text_input"/);
+  assert.match(app, /remote_screen_stopped/);
+  const protocol = read("protocol.js");
+  assert.match(protocol, /validateClipboardMessage/);
 });
 
 test("host establishes WebRTC before optional control consent", () => {

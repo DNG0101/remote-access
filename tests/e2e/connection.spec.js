@@ -144,6 +144,7 @@ test("two browser pages connect by code, deliver screen, grant/revoke control, a
   await controller.locator("[data-action='mobile-keyboard']").click();
   await expect(controller.locator("#mobileKeyboardPanel")).toBeVisible();
   await controller.locator("#mobileTextInput").fill("MOBILE TEXT TEST");
+  await controller.locator("[data-action='send-mobile-text']").click();
   await expect.poll(async () => {
     const response = await host.evaluate(() => fetch("/agent-events").then((r) => r.json()));
     return response.inputs.some((packet) =>

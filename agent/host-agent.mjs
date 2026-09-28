@@ -97,6 +97,9 @@ class WindowsInputBridge {
     this.child.stderr.on("data", (data) => {
       process.stderr.write("[agent/windows] " + data.toString());
     });
+    this.child.on("error", () => {
+      this.ready = false;
+    });
     this.child.on("exit", () => {
       this.ready = false;
     });
