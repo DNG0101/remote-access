@@ -96,6 +96,27 @@ public static class P2PDeskNative {
             Marshal.SizeOf(typeof(INPUT))
         );
     }
+    
+    public static void Unicode(ushort codeUnit, bool up) {
+        var input = new INPUT {
+            type = INPUT_KEYBOARD,
+            u = new INPUT_UNION {
+                ki = new KEYBDINPUT {
+                    wVk = 0,
+                    wScan = codeUnit,
+                    dwFlags = 0x0004 | (up ? KEYEVENTF_KEYUP : 0),
+                    time = 0,
+                    dwExtraInfo = IntPtr.Zero
+                }
+            }
+        };
+        SendInput(
+            1,
+            new[] { input },
+            Marshal.SizeOf(typeof(INPUT))
+        );
+    }
+
 }
 "@
 
@@ -153,11 +174,28 @@ function Get-VirtualKey([string]$code) {
     return 0
 }
 
+function Send-UnicodeText([string]$text) {
+    foreach ($char in $text.ToCharArray()) {
+        if ($char -eq [char]10) {
+            $enter = [int][System.Windows.Forms.Keys]::Enter
+            [P2PDeskNative]::Key([uint16]$enter, $false)
+            [P2PDeskNative]::Key([uint16]$enter, $true)
+            continue
+        }
+
+        [P2PDeskNative]::Unicode([uint16][int][char]$char, $false)
+        [P2PDeskNative]::Unicode([uint16][int][char]$char, $true)
+    }
+}
 while ($line = [Console]::ReadLine()) {
     try {
         $packet = $line | ConvertFrom-Json
 
         switch ($packet.type) {
+            "text_input" {
+                Send-UnicodeText $packet.text
+            }
+
             "mouse_move" {
                 $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
                 $x = [Math]::Max(
