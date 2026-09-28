@@ -230,10 +230,9 @@ async function sendFile(file) {
     return;
   }
 
-  const totalChunks = Math.max(
-    1,
-    Math.ceil(file.size / MAX_FILE_CHUNK_BYTES)
-  );
+  const totalChunks = file.size === 0
+    ? 0
+    : Math.ceil(file.size / MAX_FILE_CHUNK_BYTES);
 
   if (totalChunks > 512) {
     toast("This file is too large for the browser transfer protocol.", "error");
