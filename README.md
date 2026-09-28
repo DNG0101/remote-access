@@ -1,11 +1,12 @@
 # P2P Desk
 
-P2P Desk is a GitHub Pages-ready browser client for a consent-first remote support product. This package implements the first safe milestone: a responsive session workspace, same-origin two-tab WebRTC connectivity, browser screen capture, explicit view/control consent, separate data channels, telemetry, and honest capability reporting.
+P2P Desk is a GitHub Pages-ready browser client for a consent-first remote support product. The public Pages build uses PeerJS Cloud for browser-to-browser signaling and WebRTC for the actual peer connection, while browser screen capture and control permissions remain explicit.
 
 ## What is included
 
 - Static deployment: `index.html`, `styles.css`, `app.js`, `webrtc.js`, `config.js`
-- Same-origin two-tab P2P demo using `BroadcastChannel` only for signaling and `RTCPeerConnection` for the session
+- Cross-device P2P sessions on the public GitHub Pages URL using PeerJS Cloud for signaling and WebRTC for media/data
+- Same-device testing still works in multiple tabs/windows
 - Browser screen sharing via `getDisplayMedia()`
 - Separate `control`, `input`, `clipboard`, `file-transfer`, `telemetry`, and `chat` channels
 - View-only by default, visible control approval, and host session termination
@@ -26,15 +27,17 @@ For real cross-device sessions, deploy:
 
 ## Run locally
 
-Because screen capture and WebRTC require a secure context, use a local HTTPS server or `localhost`:
+Because screen capture and WebRTC require a secure context, use `localhost` or HTTPS:
 
 ```bash
 python3 -m http.server 8080
 ```
 
-Open `http://localhost:8080` in two tabs. Create a Host session in one tab, copy the six-digit code, choose Controller in the other, and join. The local demo uses a same-origin `BroadcastChannel` to exchange the WebRTC offer/answer/candidates; desktop screen media travels through the peer connection.
+Open the site in a browser, create a Host session, and use **Copy invite link**. Open that invite link on the second device/browser. The six-digit code is a human-readable session reference; the invite link also carries the broker peer ID required to locate the host through PeerJS Cloud.
 
-For the cleanest test, start screen sharing on the host before accepting a viewer. If you start it after the peer is connected, the browser client attempts a renegotiation, but native-agent integration is still required for true OS control.
+The host and controller establish a view-only WebRTC connection automatically. Screen sharing is a separate host action. Control requests happen only after the peer connection is established.
+
+PeerJS Cloud handles signaling/brokering; the media and data paths are WebRTC peer connections. PeerJS documents that the signaling server is used to broker the connection and that direct peer data does not pass through the signaling server (TURN can be used when NAT traversal requires it).
 
 ## Deploy to GitHub Pages
 
