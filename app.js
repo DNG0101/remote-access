@@ -733,9 +733,13 @@ function wireSession(session) {
           return;
         }
 
-        navigator.clipboard?.writeText(message.text)
-          .then(() => toast("Clipboard text copied to the host browser.", "success"))
-          .catch(() => toast("Host clipboard permission was unavailable.", "error"));
+        if (!navigator.clipboard) {
+          toast("Host clipboard API is unavailable.", "error");
+        } else {
+          navigator.clipboard.writeText(message.text)
+            .then(() => toast("Clipboard text copied to the host browser.", "success"))
+            .catch(() => toast("Host clipboard permission was unavailable.", "error"));
+        }
       } else {
         state.incomingClipboard = message.text;
         updateClipboardButton();
