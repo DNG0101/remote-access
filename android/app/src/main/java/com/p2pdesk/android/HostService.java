@@ -100,7 +100,7 @@ public class HostService extends Service
             );
 
         if (code == null ||
-            !code.matches("\d{6}") ||
+            !code.matches("\\d{6}") ||
             signalingUrl == null ||
             projection == null) {
             fail("Invalid Android host configuration.");

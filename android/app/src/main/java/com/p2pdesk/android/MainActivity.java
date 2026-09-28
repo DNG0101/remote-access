@@ -239,9 +239,9 @@ public class MainActivity extends Activity {
         String code =
             codeInput.getText()
                 .toString()
-                .replaceAll("\D", "");
+                .replaceAll("\\D", "");
 
-        if (!code.matches("\d{6}")) {
+        if (!code.matches("\\d{6}")) {
             codeInput.setError(
                 "Enter a 6-digit session code."
             );
@@ -283,7 +283,7 @@ public class MainActivity extends Activity {
             startHostService(
                 codeInput.getText()
                     .toString()
-                    .replaceAll("\D", ""),
+                    .replaceAll("\\D", ""),
                 data
             );
             return;
