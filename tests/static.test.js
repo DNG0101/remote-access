@@ -18,6 +18,10 @@ test("controller can join a session by six-digit room code", () => {
   assert.match(app, /createSession\("controller", code\)/);
   assert.match(app, /inviteParams\.get\("code"\)/);
   assert.match(app, /createSession\("controller", inviteCode\)/);
+  assert.match(app, /data-action='send-file'/);
+  assert.match(app, /data-action='send-chat'/);
+  assert.match(app, /validateFileTransferMessage/);
+  assert.match(app, /validateTelemetryMessage/);
 });
 
 test("host establishes WebRTC before optional control consent", () => {
@@ -30,11 +34,13 @@ test("host establishes WebRTC before optional control consent", () => {
   assert.match(rtc, /connectionState/);
   assert.match(rtc, /pendingMessages = new Map/);
   assert.match(rtc, /kind: "leave"/);
+  assert.match(rtc, /queueNegotiation/);
+  assert.match(rtc, /flushPendingMessages/);
 });
 
 test("public client is configured for a WSS signaling endpoint", () => {
   const config = read("config.js");
   assert.match(config, /wss:\/\//);
   assert.match(config, /signalingUrl/);
-  assert.match(config, /appVersion: "0\.3\.2"/);
+  assert.match(config, /appVersion: "0\.4\.0"/);
 });
