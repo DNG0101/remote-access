@@ -1267,7 +1267,7 @@ function bindEvents() {
     }
     state.role = button.dataset.role;
     state.incomingClipboard = null;
-    $("[data-role]").forEach((el) => el.classList.toggle("selected", el === button));
+    $$("[data-role]").forEach((el) => el.classList.toggle("selected", el === button));
     $("#hostForm").classList.toggle("hidden", state.role !== "host");
     $("#controllerForm").classList.toggle("hidden", state.role !== "controller");
     updateControlButton();
@@ -1326,7 +1326,7 @@ function bindEvents() {
       sendMobileText(event.currentTarget.value);
     }
   });
-  $(".quick-key-row [data-mobile-key]").forEach((button) => {
+  $$(".quick-key-row [data-mobile-key]").forEach((button) => {
     button.addEventListener("click", () => {
       sendQuickKey(button.dataset.mobileKey, button.dataset.mobileCode);
     });
@@ -1528,7 +1528,7 @@ const inviteCode = normalizeSessionCode(inviteParams.get("code") || "");
 if (inviteCode.length === 6) {
   setTimeout(() => {
     navigate("sessions");
-    $("[data-role]").forEach((el) => el.classList.toggle("selected", el.dataset.role === "controller"));
+    $$("[data-role]").forEach((el) => el.classList.toggle("selected", el.dataset.role === "controller"));
     $("#hostForm").classList.add("hidden");
     $("#controllerForm").classList.remove("hidden");
     createSession("controller", inviteCode);
