@@ -141,6 +141,18 @@ test("two browser pages connect by code, deliver screen, grant/revoke control, a
     return response.count;
   }).toBeGreaterThan(0);
 
+  await controller.locator("[data-action='mobile-keyboard']").click();
+  await expect(controller.locator("#mobileKeyboardPanel")).toBeVisible();
+  await controller.locator("#mobileTextInput").fill("MOBILE TEXT TEST");
+  await expect.poll(async () => {
+    const response = await host.evaluate(() => fetch("/agent-events").then((r) => r.json()));
+    return response.inputs.some((packet) =>
+      packet?.type === "text_input" &&
+      packet?.text === "MOBILE TEXT TEST"
+    );
+  }).toBe(true);
+  await controller.locator("[data-action='close-keyboard']").click();
+
   await host.locator("[data-action='control']").click();
   await expect(controller.locator("#peerSubtext")).toContainText("view-only", { timeout: 10_000 });
 
