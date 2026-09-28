@@ -1481,10 +1481,13 @@ function bindEvents() {
   $("#remoteVideo").addEventListener("pointerdown", (event) => {
     event.currentTarget.focus?.();
     try { event.currentTarget.setPointerCapture?.(event.pointerId); } catch {}
+    const rect = event.currentTarget.getBoundingClientRect();
     sendInput({
       type: "mouse_button",
       button: event.button === 2 ? "right" : event.button === 1 ? "middle" : "left",
       action: "down",
+      x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)),
+      y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)),
       timestamp: Date.now()
     });
   });
@@ -1493,19 +1496,27 @@ function bindEvents() {
   });
   $("#remoteVideo").addEventListener("pointerup", (event) => {
     try { event.currentTarget.releasePointerCapture?.(event.pointerId); } catch {}
+    const rect = event.currentTarget.getBoundingClientRect();
     sendInput({
       type: "mouse_button",
       button: event.button === 2 ? "right" : event.button === 1 ? "middle" : "left",
       action: "up",
+      x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)),
+      y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)),
       timestamp: Date.now()
     });
   });
-  $("#remoteVideo").addEventListener("dblclick", () => sendInput({
-    type: "mouse_button",
-    button: "left",
-    action: "double",
-    timestamp: Date.now()
-  }));
+  $("#remoteVideo").addEventListener("dblclick", (event) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    sendInput({
+      type: "mouse_button",
+      button: "left",
+      action: "double",
+      x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)),
+      y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)),
+      timestamp: Date.now()
+    });
+  });
   $("#remoteVideo").addEventListener("contextmenu", (event) => event.preventDefault());
   $("#remoteVideo").addEventListener("wheel", (event) => {
     event.preventDefault();
