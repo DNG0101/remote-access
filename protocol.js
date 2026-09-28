@@ -18,38 +18,58 @@ const CONTROL_TYPES = new Set([
   "capabilities",
   "clipboard_text"
 ]);
+const FILE_TYPES = new Set([
+  "file_offer",
+  "file_accept",
+  "file_reject",
+  "file_chunk",
+  "file_complete"
+]);
+const CHAT_TYPES = new Set(["chat_message"]);
+const TELEMETRY_TYPES = new Set(["capabilities", "stats"]);
 
 const MAX_SIGNAL_BYTES = 256 * 1024;
 const MAX_CHANNEL_BYTES = 256 * 1024;
 const MAX_CLIPBOARD_BYTES = 100 * 1024;
+const MAX_CHAT_BYTES = 8 * 1024;
+const MAX_FILE_BYTES = 25 * 1024 * 1024;
+const MAX_FILE_CHUNK_BYTES = 160 * 1024;
 const MAX_PENDING_CANDIDATES = 64;
 const MAX_PENDING_MESSAGES = 20;
 
 const encoder = new TextEncoder();
 
 const byteLength = (value) => encoder.encode(String(value)).byteLength;
-const isObject = (value) => Boolean(
-  value &&
-  typeof value === "object" &&
-  !Array.isArray(value)
-);
+const isObject = (value) =>
+  Boolean(value && typeof value === "object" && !Array.isArray(value));
 
 const validPeerId = (value) =>
   typeof value === "string" &&
   /^[A-Za-z0-9_-]{8,96}$/.test(value);
 
-const validRole = (value) => value === "host" || value === "controller";
+const validRole = (value) =>
+  value === "host" || value === "controller";
+
+const validTransferId = (value) =>
+  typeof value === "string" &&
+  /^[A-Za-z0-9_-]{8,96}$/.test(value);
+
+const validMessageId = validTransferId;
+
+const base64Re = /^[A-Za-z0-9+/]*={0,2}$/;
 
 export function makePeerId() {
   if (globalThis.crypto?.randomUUID) {
     return globalThis.crypto.randomUUID();
   }
+
   if (!globalThis.crypto?.getRandomValues) {
     throw new Error("Secure random APIs are unavailable.");
   }
 
   const bytes = new Uint8Array(16);
   globalThis.crypto.getRandomValues(bytes);
+
   return [...bytes]
     .map((value) => value.toString(16).padStart(2, "0"))
     .join("");
@@ -60,7 +80,9 @@ export function generateSessionCode() {
     throw new Error("Secure random APIs are unavailable.");
   }
 
-  const upperBound = Math.floor(0x100000000 / 1000000) * 1000000;
+  const upperBound =
+    Math.floor(0x100000000 / 1000000) * 1000000;
+
   const value = new Uint32Array(1);
 
   do {
@@ -75,7 +97,8 @@ export function normalizeSessionCode(value) {
 }
 
 export function isRecentTimestamp(value, maxAgeMs = 120000) {
-  return Number.isFinite(value) && Math.abs(Date.now() - value) <= maxAgeMs;
+  return Number.isFinite(value) &&
+    Math.abs(Date.now() - value) <= maxAgeMs;
 }
 
 export function validateSignalMessage(message) {
@@ -84,41 +107,67 @@ export function validateSignalMessage(message) {
   }
 
   if (
-    message.sys === "roster" &&
-    typeof message.roomId === "string" &&
-    /^\d{6}$/.test(message.roomId) &&
-    Array.isArray(message.roster) &&
-    message.roster.length <= 16 &&
-    message.roster.every((peerId) =>
-      typeof peerId === "string" &&
-      peerId.length > 0 &&
-      peerId.length <= 96
-    )
+    message.server === true &&
+    message.kind === "error"
   ) {
-    if (byteLength(JSON.stringify(message)) > MAX_SIGNAL_BYTES) {
-      return { ok: false, reason: "SIGNAL_TOO_LARGE" };
-    }
-    return { ok: true };
-  }
-
-  if (message.server === true && message.kind === "error") {
     if (
       typeof message.codeName !== "string" ||
       message.codeName.length < 1 ||
       message.codeName.length > 80
     ) {
-      return { ok: false, reason: "SIGNAL_ERROR_CODE_INVALID" };
+      return {
+        ok: false,
+        reason: "SIGNAL_ERROR_CODE_INVALID"
+      };
     }
 
     if (
       message.message != null &&
-      (typeof message.message !== "string" || message.message.length > 500)
+      (
+        typeof message.message !== "string" ||
+        message.message.length > 500
+      )
     ) {
-      return { ok: false, reason: "SIGNAL_ERROR_MESSAGE_INVALID" };
+      return {
+        ok: false,
+        reason: "SIGNAL_ERROR_MESSAGE_INVALID"
+      };
     }
 
-    if (byteLength(JSON.stringify(message)) > MAX_SIGNAL_BYTES) {
-      return { ok: false, reason: "SIGNAL_TOO_LARGE" };
+    if (
+      byteLength(JSON.stringify(message)) >
+      MAX_SIGNAL_BYTES
+    ) {
+      return {
+        ok: false,
+        reason: "SIGNAL_TOO_LARGE"
+      };
+    }
+
+    return { ok: true };
+  }
+
+  if (
+    message.sys === "roster" &&
+    typeof message.roomId === "string" &&
+    /^\d{6}$/.test(message.roomId) &&
+    Array.isArray(message.roster) &&
+    message.roster.length <= 16 &&
+    message.roster.every(
+      (peerId) =>
+        typeof peerId === "string" &&
+        peerId.length > 0 &&
+        peerId.length <= 96
+    )
+  ) {
+    if (
+      byteLength(JSON.stringify(message)) >
+      MAX_SIGNAL_BYTES
+    ) {
+      return {
+        ok: false,
+        reason: "SIGNAL_TOO_LARGE"
+      };
     }
 
     return { ok: true };
@@ -128,35 +177,61 @@ export function validateSignalMessage(message) {
     typeof message.roomId !== "string" ||
     !/^\d{6}$/.test(message.roomId)
   ) {
-    return { ok: false, reason: "SIGNAL_ROOM_INVALID" };
+    return {
+      ok: false,
+      reason: "SIGNAL_ROOM_INVALID"
+    };
   }
 
   if (!validPeerId(message.from)) {
-    return { ok: false, reason: "SIGNAL_PEER_ID_INVALID" };
+    return {
+      ok: false,
+      reason: "SIGNAL_PEER_ID_INVALID"
+    };
   }
 
-  if (message.to != null && !validPeerId(message.to)) {
-    return { ok: false, reason: "SIGNAL_TARGET_INVALID" };
+  if (
+    message.to != null &&
+    !validPeerId(message.to)
+  ) {
+    return {
+      ok: false,
+      reason: "SIGNAL_TARGET_INVALID"
+    };
   }
 
-  if (!Number.isFinite(Number(message.sentAt)) ||
-      !isRecentTimestamp(Number(message.sentAt))) {
-    return { ok: false, reason: "SIGNAL_TIMESTAMP_INVALID" };
+  if (
+    !Number.isFinite(Number(message.sentAt)) ||
+    !isRecentTimestamp(Number(message.sentAt))
+  ) {
+    return {
+      ok: false,
+      reason: "SIGNAL_TIMESTAMP_INVALID"
+    };
   }
 
   const isAnnouncement = message.announce === true;
+
   if (!isAnnouncement && !SIGNAL_KINDS.has(message.kind)) {
-    return { ok: false, reason: "SIGNAL_KIND_UNSUPPORTED" };
+    return {
+      ok: false,
+      reason: "SIGNAL_KIND_UNSUPPORTED"
+    };
   }
 
-  if (isAnnouncement) {
-    if (!validRole(message.role)) {
-      return { ok: false, reason: "SIGNAL_ANNOUNCE_ROLE_INVALID" };
-    }
+  if (isAnnouncement && !validRole(message.role)) {
+    return {
+      ok: false,
+      reason: "SIGNAL_ANNOUNCE_ROLE_INVALID"
+    };
   }
 
-  if (message.kind === "offer" || message.kind === "answer") {
+  if (
+    message.kind === "offer" ||
+    message.kind === "answer"
+  ) {
     const description = message.description;
+
     if (
       !isObject(description) ||
       description.type !== message.kind ||
@@ -164,36 +239,55 @@ export function validateSignalMessage(message) {
       !description.sdp.length ||
       byteLength(description.sdp) > 200 * 1024
     ) {
-      return { ok: false, reason: "SIGNAL_DESCRIPTION_INVALID" };
+      return {
+        ok: false,
+        reason: "SIGNAL_DESCRIPTION_INVALID"
+      };
     }
   }
 
   if (message.kind === "candidate") {
     const candidate = message.candidate;
+
     if (
       !isObject(candidate) ||
       typeof candidate.candidate !== "string" ||
       byteLength(candidate.candidate) > 16 * 1024
     ) {
-      return { ok: false, reason: "SIGNAL_CANDIDATE_INVALID" };
+      return {
+        ok: false,
+        reason: "SIGNAL_CANDIDATE_INVALID"
+      };
     }
 
-    if (candidate.sdpMid != null && typeof candidate.sdpMid !== "string") {
-      return { ok: false, reason: "SIGNAL_SDP_MID_INVALID" };
+    if (
+      candidate.sdpMid != null &&
+      typeof candidate.sdpMid !== "string"
+    ) {
+      return {
+        ok: false,
+        reason: "SIGNAL_SDP_MID_INVALID"
+      };
     }
 
     if (
       candidate.sdpMLineIndex != null &&
       !Number.isInteger(candidate.sdpMLineIndex)
     ) {
-      return { ok: false, reason: "SIGNAL_SDP_LINE_INVALID" };
+      return {
+        ok: false,
+        reason: "SIGNAL_SDP_LINE_INVALID"
+      };
     }
 
     if (
       candidate.usernameFragment != null &&
       typeof candidate.usernameFragment !== "string"
     ) {
-      return { ok: false, reason: "SIGNAL_USERNAME_FRAGMENT_INVALID" };
+      return {
+        ok: false,
+        reason: "SIGNAL_USERNAME_FRAGMENT_INVALID"
+      };
     }
   }
 
@@ -203,19 +297,34 @@ export function validateSignalMessage(message) {
       message.codeName.length < 1 ||
       message.codeName.length > 80
     ) {
-      return { ok: false, reason: "SIGNAL_ERROR_CODE_INVALID" };
+      return {
+        ok: false,
+        reason: "SIGNAL_ERROR_CODE_INVALID"
+      };
     }
 
     if (
       message.message != null &&
-      (typeof message.message !== "string" || message.message.length > 500)
+      (
+        typeof message.message !== "string" ||
+        message.message.length > 500
+      )
     ) {
-      return { ok: false, reason: "SIGNAL_ERROR_MESSAGE_INVALID" };
+      return {
+        ok: false,
+        reason: "SIGNAL_ERROR_MESSAGE_INVALID"
+      };
     }
   }
 
-  if (byteLength(JSON.stringify(message)) > MAX_SIGNAL_BYTES) {
-    return { ok: false, reason: "SIGNAL_TOO_LARGE" };
+  if (
+    byteLength(JSON.stringify(message)) >
+    MAX_SIGNAL_BYTES
+  ) {
+    return {
+      ok: false,
+      reason: "SIGNAL_TOO_LARGE"
+    };
   }
 
   return { ok: true };
@@ -270,8 +379,9 @@ export function validateInputMessage(message) {
     ["down", "up"].includes(message.action) &&
     Array.isArray(message.modifiers) &&
     message.modifiers.length <= 4 &&
-    message.modifiers.every((value) =>
-      ["CTRL", "ALT", "SHIFT", "META"].includes(value)
+    message.modifiers.every(
+      (value) =>
+        ["CTRL", "ALT", "SHIFT", "META"].includes(value)
     )
   );
 }
@@ -304,7 +414,10 @@ export function validateControlMessage(message) {
   if (message.type === "control_revoked") {
     return (
       message.reason == null ||
-      (typeof message.reason === "string" && message.reason.length <= 120)
+      (
+        typeof message.reason === "string" &&
+        message.reason.length <= 120
+      )
     );
   }
 
@@ -319,6 +432,93 @@ export function validateControlMessage(message) {
   return (
     typeof message.text === "string" &&
     byteLength(message.text) <= MAX_CLIPBOARD_BYTES
+  );
+}
+
+export function validateChatMessage(message) {
+  return (
+    isObject(message) &&
+    message.type === "chat_message" &&
+    validMessageId(message.messageId) &&
+    typeof message.text === "string" &&
+    message.text.trim().length > 0 &&
+    message.text.length <= 4000 &&
+    byteLength(message.text) <= MAX_CHAT_BYTES &&
+    isRecentTimestamp(message.sentAt, 10 * 60 * 1000)
+  );
+}
+
+export function validateFileTransferMessage(message) {
+  if (!isObject(message) || !FILE_TYPES.has(message.type)) {
+    return false;
+  }
+
+  if (!validTransferId(message.transferId)) {
+    return false;
+  }
+
+  if (message.type === "file_offer") {
+    return (
+      typeof message.name === "string" &&
+      message.name.length > 0 &&
+      message.name.length <= 255 &&
+      typeof message.mime === "string" &&
+      message.mime.length <= 128 &&
+      Number.isInteger(message.size) &&
+      message.size >= 0 &&
+      message.size <= MAX_FILE_BYTES &&
+      Number.isInteger(message.totalChunks) &&
+      message.totalChunks >= 1 &&
+      message.totalChunks <= 512
+    );
+  }
+
+  if (
+    message.type === "file_accept" ||
+    message.type === "file_reject"
+  ) {
+    return true;
+  }
+
+  if (message.type === "file_chunk") {
+    return (
+      Number.isInteger(message.index) &&
+      message.index >= 0 &&
+      message.index < 512 &&
+      typeof message.data === "string" &&
+      message.data.length > 0 &&
+      message.data.length <= 240000 &&
+      base64Re.test(message.data)
+    );
+  }
+
+  return true;
+}
+
+export function validateTelemetryMessage(message) {
+  if (!isObject(message) || !TELEMETRY_TYPES.has(message.type)) {
+    return false;
+  }
+
+  if (message.type === "capabilities") {
+    return (
+      typeof message.screen === "boolean" &&
+      typeof message.dataChannels === "boolean" &&
+      typeof message.clipboard === "boolean" &&
+      typeof message.fileTransfer === "boolean" &&
+      typeof message.chat === "boolean" &&
+      typeof message.nativeInput === "boolean"
+    );
+  }
+
+  return (
+    isRecentTimestamp(message.at, 60 * 1000) &&
+    (message.rtt == null || (
+      Number.isFinite(message.rtt) &&
+      message.rtt >= 0 &&
+      message.rtt <= 120000
+    )) &&
+    (message.route == null || typeof message.route === "string")
   );
 }
 
@@ -345,6 +545,18 @@ export function validateDataChannelMessage(channel, message) {
     return validateControlMessage(parsed);
   }
 
+  if (channel === "chat") {
+    return validateChatMessage(parsed);
+  }
+
+  if (channel === "file-transfer") {
+    return validateFileTransferMessage(parsed);
+  }
+
+  if (channel === "telemetry") {
+    return validateTelemetryMessage(parsed);
+  }
+
   return isObject(parsed);
 }
 
@@ -363,7 +575,9 @@ export function calculateBitrate(previous, current, at = Date.now()) {
   if (delta < 0) return null;
 
   return Math.round(
-    (delta * 8) / ((at - previous.at) / 1000) / 1000
+    (delta * 8) /
+    ((at - previous.at) / 1000) /
+    1000
   );
 }
 
@@ -371,6 +585,9 @@ export {
   MAX_SIGNAL_BYTES,
   MAX_CHANNEL_BYTES,
   MAX_CLIPBOARD_BYTES,
+  MAX_CHAT_BYTES,
+  MAX_FILE_BYTES,
+  MAX_FILE_CHUNK_BYTES,
   MAX_PENDING_CANDIDATES,
   MAX_PENDING_MESSAGES
 };
