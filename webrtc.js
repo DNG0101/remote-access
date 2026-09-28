@@ -353,10 +353,13 @@ export class PeerSession extends EventTarget {
       if (
         message.codeName === "SESSION_BUSY" ||
         message.codeName === "ROLE_CONFLICT" ||
-        message.codeName === "NOT_JOINED"
+        message.codeName === "NOT_JOINED" ||
+        message.codeName === "SESSION_EXPIRED"
       ) {
         this.remotePeerId = "";
         this.remoteRole = "";
+        this.closePeerConnection();
+        this.emit("state", "failed");
       }
       return;
     }
