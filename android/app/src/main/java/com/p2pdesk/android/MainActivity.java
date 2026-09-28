@@ -22,6 +22,7 @@ import android.widget.TextView;
 public class MainActivity extends Activity {
     private static final int REQUEST_CAPTURE = 8201;
     private static final int REQUEST_SAVE = 8301;
+    private static final int REQUEST_OPEN_FILE = 8302;
 
     private EditText codeInput;
     private EditText signalingInput;
@@ -29,6 +30,8 @@ public class MainActivity extends Activity {
     private CheckBox clipboardCheckbox;
     private TextView statusText;
     private TextView accessText;
+    private TextView chatLog;
+    private EditText chatInput;
     private String pendingFilePath = "";
 
     @Override
@@ -175,6 +178,66 @@ public class MainActivity extends Activity {
         });
         root.addView(stop);
 
+        Button sendFile =
+            new Button(this);
+        sendFile.setText(
+            "Send a file to PC"
+        );
+        sendFile.setOnClickListener(view -> {
+            Intent intent =
+                new Intent(Intent.ACTION_OPEN_DOCUMENT)
+                    .setType("*/*")
+                    .addCategory(
+                        Intent.CATEGORY_OPENABLE
+                    );
+            startActivityForResult(
+                intent,
+                REQUEST_OPEN_FILE
+            );
+        });
+        root.addView(sendFile);
+
+        root.addView(
+            text("Session chat", 13)
+        );
+
+        chatLog = text(
+            "No chat messages.",
+            14
+        );
+        chatLog.setMinLines(4);
+        root.addView(chatLog);
+
+        chatInput = new EditText(this);
+        chatInput.setHint("Message to PC…");
+        chatInput.setSingleLine(true);
+        root.addView(
+            chatInput,
+            fieldParams()
+        );
+
+        Button sendChat =
+            new Button(this);
+        sendChat.setText("Send chat");
+        sendChat.setOnClickListener(view -> {
+            HostService service =
+                HostService.getInstance();
+
+            if (service == null) return;
+
+            String message =
+                chatInput.getText()
+                    .toString();
+
+            if (
+                service.sendChat(message)
+            ) {
+                chatInput.setText("");
+                refreshStatus();
+            }
+        });
+        root.addView(sendChat);
+
         Button clipboard =
             new Button(this);
         clipboard.setText(
@@ -301,9 +364,7 @@ public class MainActivity extends Activity {
 
             Uri destination = data.getData();
             if (destination == null) return;
-            String sourcePath =
-                pendingFilePath;
-
+            String sourcePath = pendingFilePath;
             pendingFilePath = "";
 
             new Thread(() -> {
@@ -337,6 +398,30 @@ public class MainActivity extends Activity {
                 } catch (Exception ignored) {
                 }
             }).start();
+
+            return;
+        }
+
+        if (requestCode == REQUEST_OPEN_FILE) {
+            if (
+                resultCode != RESULT_OK ||
+                data == null ||
+                data.getData() == null
+            ) {
+                return;
+            }
+
+            HostService service =
+                HostService.getInstance();
+
+            if (service == null ||
+                !service.sendFileToPeer(
+                    data.getData()
+                )) {
+                refreshStatus();
+            }
+
+            return;
         }
     }
 
