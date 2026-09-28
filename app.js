@@ -121,14 +121,23 @@ function wireSession(session) {
       if (message.type === "control_decision" && state.role === "controller") {
         state.controlGranted = Boolean(message.granted);
         $("#peerSubtext").textContent = state.controlGranted ? "Full control granted — stop it any time" : "Connected in view-only mode";
+        $("[data-action=\"control\"]").textContent = state.controlGranted ? "⌖ Revoke control" : "⌖ Request control";
         toast(state.controlGranted ? "The host granted control." : "The host kept this session view-only.", state.controlGranted ? "success" : "info");
         logEvent("control_decision_received", { granted: state.controlGranted });
       }
       if (channel === "input") {
+        if (state.role !== "host" || !state.controlGranted) {
+          logEvent("input_rejected_no_control", {}, "error");
+          return;
+        }
         if (validateInputMessage(message)) logEvent("input_received", { type: message.type });
         else logEvent("invalid_input_rejected", {}, "error");
       }
       if (channel === "clipboard") {
+        if (state.role !== "host" || (!state.shareClipboard && !state.controlGranted)) {
+          logEvent("clipboard_rejected_no_consent", {}, "error");
+          return;
+        }
         logEvent("clipboard_message_received", { characters: typeof message.text === "string" ? message.text.length : 0 });
       }
     } catch { logEvent("data_message", { channel }); }
@@ -141,7 +150,7 @@ async function startCapture() {
   if (!navigator.mediaDevices?.getDisplayMedia) { toast("This browser does not support screen capture.", "error"); return; }
   try {
     state.capture = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 30, max: 60 } }, audio: false });
-    state.capture.getVideoTracks()[0].onended = () => { state.capture = null; $("#captureLabel").textContent = "Share screen"; toast("Screen sharing stopped.", "info"); };
+    state.capture.getVideoTracks()[0].onended = () => { state.capture = null; $("#captureLabel").textContent = "Share screen"; state.session?.clearLocalVideo().catch(() => {}); toast("Screen sharing stopped.", "info"); };
     $("#captureLabel").textContent = "Screen sharing";
     $("#videoTitle").textContent = "Screen sharing is active";
     $("#videoPlaceholder").classList.remove("hidden");
@@ -159,7 +168,11 @@ async function startCapture() {
 }
 
 function sendControlRequest() {
-  if (state.role !== "controller") { toast("Control requests are sent by the controller.", "info"); return; }
+  if (state.role === "host") {
+    if (state.controlGranted) revokeControl();
+    else toast("Control is view-only until the controller requests it.", "info");
+    return;
+  }
   if (!state.session || !state.peerConnected) { toast("Connect to a host before requesting control.", "info"); return; }
   state.session?.send("control", { type: "control_request", requestedAt: Date.now() });
   toast("Control request sent to the host.", "success");
@@ -182,6 +195,7 @@ async function grantControl(granted) {
   }
   state.session?.send("control", { type: "control_decision", granted });
   $("#peerSubtext").textContent = granted ? "Full control granted — stop it any time" : "Connected in view-only mode";
+  $("[data-action=\"control\"]").textContent = granted ? "⌖ Revoke control" : "⌖ Request control";
   toast(granted ? "Full control granted." : "View-only mode kept.", granted ? "success" : "info");
   logEvent("control_decision", { granted });
 }
@@ -256,6 +270,7 @@ function bindEvents() {
   $("[data-action='approve-control']").addEventListener("click", () => grantControl(true));
   $("[data-action='reject-control']").addEventListener("click", () => grantControl(false));
   $("[data-action='disconnect']").addEventListener("click", disconnect);
+  $("[data-action='control']").setAttribute("aria-label", "Request or revoke control");
   $("[data-action='copy-code']").addEventListener("click", () => copy(state.code, "Session code"));
   $("[data-action='copy-text']").addEventListener("click", () => {
     if (!navigator.clipboard) return toast("Clipboard permission was unavailable.", "error");
