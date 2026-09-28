@@ -17,6 +17,7 @@ The browser milestone implements these end-to-end modules:
 - Bidirectional chat over the chat data channel.
 - Bidirectional file transfer up to 25 MB using chunked, ordered WebRTC data-channel messages.
 - Capability discovery and lightweight telemetry.
+- Android-friendly touch control with an on-screen mobile keyboard routed through the native PC agent.
 - Connection/ICE/data-channel diagnostics.
 - Explicit peer-leave propagation and teardown.
 - Browser E2E coverage for connection, screen delivery, control, clipboard, chat, bidirectional file transfer, and disconnect.
@@ -25,8 +26,7 @@ The browser milestone implements these end-to-end modules:
 
 A normal browser page cannot move the Windows/macOS/Linux system cursor, type into arbitrary native applications, read arbitrary native filesystem paths, run native processes, bypass permission prompts, or provide a true Android system-level host without a native Android application.
 
-The browser therefore sends validated input intents, but the host page does not pretend those intents are OS actions. OS control requires a separately installed native host agent.
-
+The browser therefore sends validated input intents, but the host page does not pretend those intents are OS actions. OS control requires the separately installed native host agent. The host can enable it with the agent query parameter, for example `?agent=ws%3A%2F%2F127.0.0.1%3A17878`; current Chrome supports loopback WebSocket targeting with a local-network permission prompt.
 ## Architecture
 
 GitHub Pages -> WSS signaling -> Host browser <-> Controller browser over WebRTC.
