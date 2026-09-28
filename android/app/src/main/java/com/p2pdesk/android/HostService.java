@@ -764,14 +764,15 @@ public class HostService extends Service
     }
 
     private static String sanitize(String name) {
-        String result =
-            name.replaceAll(
-                "[\\/:*?"<>|]",
-                "_"
-            );
+        String result = name == null ? "" : name;
+        String[] invalid = {
+            "\\", "/", ":", "*", "?", "\"", "<", ">", "|"
+        };
 
-        return result.isEmpty()
-            ? "download"
-            : result;
+        for (String item : invalid) {
+            result = result.replace(item, "_");
+        }
+
+        return result.isEmpty() ? "download" : result;
     }
 }
