@@ -610,7 +610,6 @@ export function calculateBitrate(previous, current, at = Date.now()) {
 }
 
 export {
-  validateClipboardMessage,
   MAX_SIGNAL_BYTES,
   MAX_CHANNEL_BYTES,
   MAX_CLIPBOARD_BYTES,
