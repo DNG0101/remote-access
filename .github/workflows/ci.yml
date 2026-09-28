@@ -4,18 +4,18 @@ on:
   push:
     branches: ["main"]
     paths:
-      - "**.js"
-      - "**.mjs"
-      - "**.json"
+      - "**/*.js"
+      - "**/*.mjs"
+      - "**/*.json"
       - "index.html"
       - "config.js"
       - "styles.css"
       - ".github/workflows/ci.yml"
   pull_request:
     paths:
-      - "**.js"
-      - "**.mjs"
-      - "**.json"
+      - "**/*.js"
+      - "**/*.mjs"
+      - "**/*.json"
       - "index.html"
       - "config.js"
       - "styles.css"
