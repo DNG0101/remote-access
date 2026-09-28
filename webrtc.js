@@ -2,37 +2,31 @@ import {
   CHANNELS,
   makePeerId,
   validateDataChannelMessage,
-  validateSignalMessage,
-  calculateBitrate,
-  MAX_PENDING_CANDIDATES,
-  MAX_PENDING_MESSAGES
+  calculateBitrate
 } from "./protocol.js";
 
-const EVENTS = ["state", "ice", "signaling", "channel", "track", "stats", "message", "error"];
+const EVENTS = ["state","ice","signaling","channel","track","stats","message","error"];
 
 export class PeerSession extends EventTarget {
-  constructor({ code, role, iceServers = [], onLog = () => {} }) {
+  constructor({ code, role, iceServers = [], targetPeerId = "", onLog = () => {} }) {
     super();
     this.code = code;
     this.role = role;
     this.peerId = makePeerId();
+    this.targetPeerId = targetPeerId || "";
     this.onLog = onLog;
     this.iceServers = Array.isArray(iceServers) ? iceServers : [];
-    this.pc = null;
-    this.channels = new Map();
-    this.remoteStream = new MediaStream();
+    this.peer = null;
+    this.connection = null;
+    this.mediaCall = null;
     this.localStream = null;
-    this.room = null;
-    this.signalingSocket = null;
-    this.signalingReadyPromise = null;
-    this.remotePeerId = null;
-    this.pendingCandidates = [];
-    this.pendingMessages = new Map();
-    this.negotiationPromise = null;
+    this.remoteStream = new MediaStream();
     this.closed = false;
-    this.statsPrevious = null;
-    this.signalingMode = "";
+    this.openPromise = null;
+    this.signalingMode = "peerjs-cloud";
     this.usingLocalSignaling = false;
+    this.remotePeerId = "";
+    this.statsPrevious = null;
   }
 
   on(name, fn) {
@@ -45,658 +39,326 @@ export class PeerSession extends EventTarget {
     this.dispatchEvent(new CustomEvent(name, { detail }));
   }
 
-  makeEnvelope(payload, to = this.remotePeerId) {
-    return {
-      ...payload,
-      code: this.code,
-      from: this.role,
-      peerId: this.peerId,
-      to: to || null,
-      at: Date.now()
-    };
+  log(event, detail = {}) {
+    this.onLog({ event, detail, at: new Date().toISOString() });
   }
 
-  signal(payload, to = this.remotePeerId) {
-    if (this.closed) return false;
-    const message = this.makeEnvelope(payload, to);
-    const result = validateSignalMessage(message);
-
-    if (!result.ok) {
-      this.emit("error", {
-        code: result.reason,
-        message: "Invalid signaling message was blocked."
-      });
-      return false;
-    }
-
-    if (this.room) {
-      this.room.postMessage(message);
-      return true;
-    }
-
-    if (this.signalingSocket?.readyState === WebSocket.OPEN) {
-      this.signalingSocket.send(JSON.stringify(message));
-      return true;
-    }
-
-    return false;
-  }
-
-  openRoom() {
-    if (this.room || this.signalingSocket) return;
-
-    const configuredUrl = globalThis.window?.P2P_DESK_CONFIG?.signalingUrl?.trim?.() || "";
-    const BroadcastChannelCtor = globalThis.window?.BroadcastChannel || globalThis.BroadcastChannel;
-
-    if (configuredUrl) {
-      this.signalingMode = "websocket";
-      this.usingLocalSignaling = false;
-      return;
-    }
-
-    if (typeof BroadcastChannelCtor === "function") {
-      this.room = new BroadcastChannelCtor("p2p-desk:" + this.code);
-      this.usingLocalSignaling = true;
-      this.signalingMode = "same-origin-tabs";
-      this.room.onmessage = (event) => {
-        this.handleSignal(event.data).catch((error) => {
-          this.emit("error", {
-            code: "SIGNALING_HANDSHAKE_FAILED",
-            message: error.message
-          });
-        });
-      };
-      return;
-    }
-
-    throw new Error(
-      "No signaling transport is configured. Same-device mode needs BroadcastChannel; cross-device mode needs a WSS signalingUrl."
-    );
+  get inviteUrl() {
+    if (!this.peer?.id) return "";
+    const url = new URL(window.location.href);
+    url.hash = "sessions";
+    url.search = "";
+    url.searchParams.set("join", this.peer.id);
+    url.searchParams.set("code", this.code);
+    return url.toString();
   }
 
   async connect() {
     if (this.closed) throw new Error("Session is closed.");
+    if (this.openPromise) return this.openPromise;
 
-    this.openRoom();
-    this.emit("signaling", {
-      state: "connecting",
-      mode: this.signalingMode
-    });
-
-    const configuredUrl = globalThis.window?.P2P_DESK_CONFIG?.signalingUrl?.trim?.() || "";
-    if (configuredUrl) {
-      await this.connectWebSocket(configuredUrl);
+    const PeerCtor = globalThis.window?.Peer;
+    if (typeof PeerCtor !== "function") {
+      throw new Error("The P2P signaling library did not load. Refresh the page and try again.");
     }
 
-    if (this.role === "controller") {
-      if (!this.signal({ type: "join", role: "controller" }, null)) {
-        throw new Error(
-          "The session signaling transport is not ready. For two devices, configure a public WSS signaling endpoint."
-        );
-      }
-      this.emit("state", "joining");
-    } else {
-      this.emit("state", "waiting");
-    }
-
-    this.emit("signaling", {
-      state: "connected",
-      mode: this.signalingMode
-    });
-
-    this.log("signaling_ready", {
-      mode: this.signalingMode
-    });
-  }
-
-  connectWebSocket(url) {
-    if (this.signalingReadyPromise) return this.signalingReadyPromise;
-
-    this.signalingReadyPromise = new Promise((resolve, reject) => {
+    this.openPromise = new Promise((resolve, reject) => {
       let settled = false;
-      let socket;
+
+      const peerOptions = {
+        debug: 1,
+        config: {
+          iceServers: this.iceServers
+        }
+      };
 
       try {
-        socket = new WebSocket(url);
-      } catch {
-        reject(new Error("The configured signaling URL is invalid."));
+        this.peer = new PeerCtor(undefined, peerOptions);
+      } catch (error) {
+        reject(error);
         return;
       }
 
-      this.signalingSocket = socket;
-
-      const timeout = setTimeout(() => {
+      const finish = (fn, value) => {
         if (settled) return;
         settled = true;
-        try { socket.close(); } catch {}
-        reject(new Error("The signaling service did not become ready within 8 seconds."));
-      }, 8000);
-
-      socket.onopen = () => {
-        if (settled) return;
-        clearTimeout(timeout);
-        settled = true;
-
-        // Send join only after WebSocket is actually open.
-        if (!this.signal({ type: "join", role: this.role }, null)) {
-          reject(new Error("The signaling connection opened but the join message could not be sent."));
-          return;
-        }
-
-        resolve();
+        fn(value);
       };
 
-      socket.onmessage = (event) => {
-        if (typeof event.data !== "string" || event.data.length > 300000) {
-          this.emit("error", {
-            code: "SIGNAL_TOO_LARGE",
-            message: "The signaling service sent an oversized message."
-          });
-          return;
-        }
-
-        try {
-          const message = JSON.parse(event.data);
-          this.handleSignal(message).catch((error) => {
-            this.emit("error", {
-              code: "SIGNALING_HANDSHAKE_FAILED",
-              message: error.message
-            });
-          });
-        } catch {
-          this.emit("error", {
-            code: "SIGNAL_PARSE_FAILED",
-            message: "The signaling service sent invalid JSON."
-          });
-        }
-      };
-
-      socket.onerror = () => {
-        const error = {
-          code: "SIGNALING_UNAVAILABLE",
-          message: "The configured signaling service could not be reached."
-        };
-        this.emit("error", error);
-
-        if (!settled) {
-          clearTimeout(timeout);
-          settled = true;
-          reject(new Error(error.message));
-        }
-      };
-
-      socket.onclose = () => {
-        if (!this.closed) {
-          this.emit("signaling", {
-            state: "disconnected",
-            mode: "websocket"
-          });
-        }
-      };
-    });
-
-    return this.signalingReadyPromise;
-  }
-
-  createPeer() {
-    if (this.pc) return this.pc;
-
-    if (typeof RTCPeerConnection !== "function") {
-      throw new Error("This browser does not support WebRTC peer connections.");
-    }
-
-    this.pc = new RTCPeerConnection({
-      iceServers: this.iceServers
-    });
-
-    this.pc.onicecandidate = (event) => {
-      if (!event.candidate || !this.remotePeerId) return;
-
-      const candidate = typeof event.candidate.toJSON === "function"
-        ? event.candidate.toJSON()
-        : {
-            candidate: event.candidate.candidate,
-            sdpMid: event.candidate.sdpMid,
-            sdpMLineIndex: event.candidate.sdpMLineIndex,
-            usernameFragment: event.candidate.usernameFragment
-          };
-
-      this.signal(
-        {
-          type: "candidate",
-          candidate
-        },
-        this.remotePeerId
-      );
-    };
-
-    this.pc.onconnectionstatechange = () => {
-      const value = this.pc?.connectionState || "closed";
-      this.emit("state", value);
-      this.log("connection_state", { state: value });
-    };
-
-    this.pc.oniceconnectionstatechange = () => {
-      this.emit("ice", this.pc?.iceConnectionState || "closed");
-    };
-
-    this.pc.onsignalingstatechange = () => {
       this.emit("signaling", {
-        state: this.pc?.signalingState || "closed",
+        state: "connecting",
         mode: this.signalingMode
       });
-    };
 
-    this.pc.ontrack = (event) => {
-      const tracks = event.streams?.[0]?.getTracks?.() || [event.track];
-      for (const track of tracks) {
-        if (track && !this.remoteStream.getTracks().includes(track)) {
-          this.remoteStream.addTrack(track);
-        }
-      }
-
-      this.emit("track", {
-        stream: this.remoteStream,
-        track: event.track
-      });
-    };
-
-    this.pc.ondatachannel = (event) => this.attachChannel(event.channel);
-
-    return this.pc;
-  }
-
-  createChannels() {
-    if (!this.pc || this.role !== "host") return;
-
-    CHANNELS.forEach((name) => {
-      if (!this.channels.has(name)) {
-        this.attachChannel(
-          this.pc.createDataChannel(name, {
-            ordered: name !== "input"
-          })
-        );
-      }
-    });
-  }
-
-  attachChannel(channel) {
-    if (!CHANNELS.includes(channel.label)) {
-      try { channel.close(); } catch {}
-      this.emit("error", {
-        code: "CHANNEL_UNSUPPORTED",
-        message: "Unsupported data channel was closed."
-      });
-      return;
-    }
-
-    const previous = this.channels.get(channel.label);
-    if (previous && previous !== channel) {
-      try { previous.close(); } catch {}
-    }
-
-    this.channels.set(channel.label, channel);
-    channel.bufferedAmountLowThreshold = 64 * 1024;
-
-    channel.onopen = () => {
-      const queued = this.pendingMessages.get(channel.label) || [];
-      this.pendingMessages.delete(channel.label);
-
-      for (const message of queued) {
-        if (channel.readyState !== "open") break;
-        if (channel.bufferedAmount > 256 * 1024) break;
-        channel.send(message);
-      }
-
-      this.emit("channel", {
-        name: channel.label,
-        state: "open"
-      });
-      this.log("channel_open", {
-        channel: channel.label
-      });
-    };
-
-    channel.onclose = () => {
-      if (this.channels.get(channel.label) === channel) {
-        this.channels.delete(channel.label);
-      }
-      this.emit("channel", {
-        name: channel.label,
-        state: "closed"
-      });
-    };
-
-    channel.onerror = () => {
-      this.emit("error", {
-        code: "CHANNEL_ERROR",
-        message: channel.label + " channel error"
-      });
-    };
-
-    channel.onmessage = (event) => {
-      if (typeof event.data === "string" &&
-          !validateDataChannelMessage(channel.label, event.data)) {
-        this.emit("error", {
-          code: "INVALID_CHANNEL_MESSAGE",
-          message: "A malformed " + channel.label + " message was rejected."
+      this.peer.on("open", (id) => {
+        this.peerId = id;
+        this.emit("signaling", {
+          state: "connected",
+          mode: this.signalingMode,
+          peerId: id
         });
-        return;
-      }
+        this.log("signaling_ready", {
+          mode: this.signalingMode
+        });
 
-      this.emit("message", {
-        channel: channel.label,
-        data: event.data
-      });
-    };
-  }
-
-  async setLocalStream(stream) {
-    this.localStream = stream || null;
-
-    if (!stream) {
-      await this.clearLocalVideo();
-      return;
-    }
-
-    if (!this.pc) {
-      // Persist stream; it will be attached when the host creates the peer.
-      return;
-    }
-
-    let needsNegotiation = false;
-
-    for (const track of stream.getTracks()) {
-      const sender = this.pc.getSenders().find(
-        (candidate) => candidate.track?.kind === track.kind
-      );
-
-      if (sender) {
-        await sender.replaceTrack(track);
-      } else {
-        this.pc.addTrack(track, stream);
-        needsNegotiation = true;
-      }
-    }
-
-    if (needsNegotiation && this.role === "host" && this.remotePeerId) {
-      await this.negotiate();
-    }
-  }
-
-  async clearLocalVideo() {
-    if (!this.pc) {
-      return;
-    }
-
-    let changed = false;
-
-    for (const sender of this.pc.getSenders()) {
-      if (sender.track?.kind === "video") {
-        await sender.replaceTrack(null);
-        changed = true;
-      }
-    }
-
-    if (changed && this.remotePeerId && this.role === "host") {
-      await this.negotiate();
-    }
-  }
-
-  async startHostConnection() {
-    if (this.role !== "host") return;
-    if (!this.remotePeerId) throw new Error("No controller has joined.");
-    const pc = this.createPeer();
-
-    this.createChannels();
-
-    if (this.localStream) {
-      for (const track of this.localStream.getTracks()) {
-        if (!pc.getSenders().some((sender) => sender.track?.kind === track.kind)) {
-          pc.addTrack(track, this.localStream);
+        if (this.role === "host") {
+          this.emit("state", "waiting");
+          finish(resolve);
+          return;
         }
-      }
-    }
 
-    await this.negotiate();
-  }
+        if (!this.targetPeerId) {
+          finish(reject, new Error(
+            "A cross-device join link is required. Open the host's invite link, or use two tabs on the same device."
+          ));
+          return;
+        }
 
-  async negotiate() {
-    if (this.closed || this.role !== "host" || !this.pc || !this.remotePeerId) {
-      return;
-    }
+        this.connectToHost();
+        finish(resolve);
+      });
 
-    if (this.negotiationPromise) return this.negotiationPromise;
+      this.peer.on("connection", (connection) => {
+        if (this.role !== "host") {
+          try { connection.close(); } catch {}
+          return;
+        }
+        this.attachConnection(connection);
+      });
 
-    this.negotiationPromise = (async () => {
-      if (this.pc.signalingState !== "stable") return;
+      this.peer.on("call", (call) => {
+        if (this.role !== "controller") {
+          try { call.close(); } catch {}
+          return;
+        }
 
-      const offer = await this.pc.createOffer();
-      await this.pc.setLocalDescription(offer);
+        if (this.remotePeerId && call.peer !== this.remotePeerId) {
+          try { call.close(); } catch {}
+          return;
+        }
 
-      if (!this.pc.localDescription) {
-        throw new Error("The browser did not produce a local WebRTC offer.");
-      }
+        this.remotePeerId = call.peer;
+        this.mediaCall = call;
 
-      this.signal(
-        {
-          type: "offer",
-          description: {
-            type: this.pc.localDescription.type,
-            sdp: this.pc.localDescription.sdp
-          }
-        },
-        this.remotePeerId
-      );
+        try {
+          call.answer();
+        } catch (error) {
+          this.emit("error", {
+            code: "MEDIA_ANSWER_FAILED",
+            message: error.message
+          });
+          return;
+        }
 
-      this.log("offer_sent", {});
-    })().finally(() => {
-      this.negotiationPromise = null;
+        call.on("stream", (stream) => {
+          this.remoteStream.getTracks().forEach((track) => {
+            try { track.stop(); } catch {}
+          });
+          this.remoteStream = stream;
+          this.emit("track", {
+            stream,
+            track: stream.getVideoTracks?.()[0] || stream.getTracks?.()[0] || null
+          });
+        });
+
+        call.on("close", () => {
+          this.mediaCall = null;
+        });
+
+        call.on("error", (error) => {
+          this.emit("error", {
+            code: "MEDIA_CALL_FAILED",
+            message: error.message || "Remote media call failed."
+          });
+        });
+      });
+
+      this.peer.on("disconnected", () => {
+        this.emit("signaling", {
+          state: "disconnected",
+          mode: this.signalingMode
+        });
+      });
+
+      this.peer.on("close", () => {
+        if (!this.closed) this.emit("state", "closed");
+      });
+
+      this.peer.on("error", (error) => {
+        const message = this.describePeerError(error);
+        this.log("peer_error", { type: error?.type, message });
+        this.emit("error", {
+          code: "PEERJS_" + String(error?.type || "ERROR").toUpperCase().replaceAll("-", "_"),
+          message
+        });
+        if (!settled) finish(reject, new Error(message));
+      });
     });
 
-    return this.negotiationPromise;
+    return this.openPromise;
   }
 
-  async handleSignal(message) {
-    if (this.closed || !message) return;
+  describePeerError(error) {
+    const type = error?.type;
+    if (type === "peer-unavailable") {
+      return "The host invite is no longer active. Ask the host to create a new session.";
+    }
+    if (type === "network") {
+      return "The signaling service could not be reached. Check the network connection.";
+    }
+    if (type === "browser-incompatible") {
+      return "This browser does not support the required WebRTC features.";
+    }
+    if (type === "invalid-id") {
+      return "The host invite link is invalid.";
+    }
+    if (type === "unavailable-id") {
+      return "This session ID is already in use. Create a new session.";
+    }
+    return error?.message || "The peer signaling connection failed.";
+  }
 
-    const validation = validateSignalMessage(message);
-    if (!validation.ok) {
-      this.log("invalid_signal", {
-        reason: validation.reason
+  connectToHost() {
+    if (!this.peer || !this.targetPeerId) return;
+
+    this.emit("state", "connecting");
+    this.remotePeerId = this.targetPeerId;
+
+    let connection;
+    try {
+      connection = this.peer.connect(this.targetPeerId, {
+        reliable: true,
+        metadata: {
+          role: "controller",
+          code: this.code
+        }
+      });
+    } catch (error) {
+      this.emit("error", {
+        code: "DATA_CONNECT_FAILED",
+        message: error.message
       });
       return;
     }
 
-    if (message.code !== this.code) return;
-    if (message.peerId === this.peerId) return;
-    if (message.to && message.to !== this.peerId) return;
+    this.attachConnection(connection);
+  }
 
-    if (message.type === "join") {
-      if (this.role !== "host" || message.role !== "controller") return;
+  attachConnection(connection) {
+    if (!connection) return;
 
-      if (this.remotePeerId && this.remotePeerId !== message.peerId) {
-        this.signal(
-          {
-            type: "reject",
-            codeName: "SESSION_BUSY",
-            message: "This session already has an active controller."
-          },
-          message.peerId
-        );
-        return;
-      }
+    if (this.connection && this.connection !== connection) {
+      try { this.connection.close(); } catch {}
+    }
 
-      this.remotePeerId = message.peerId;
+    if (this.remotePeerId && connection.peer !== this.remotePeerId) {
+      try { connection.close(); } catch {}
+      return;
+    }
+
+    this.connection = connection;
+    this.remotePeerId = connection.peer;
+
+    connection.on("open", async () => {
+      this.emit("state", "connected");
+      this.log("peer_connected", {
+        peerId: connection.peer
+      });
+
       this.emit("message", {
         channel: "system",
         data: JSON.stringify({
-          type: "peer_joined"
+          type: "peer_joined",
+          peerId: connection.peer
         })
       });
 
-      this.signal(
-        {
-          type: "join_ack"
-        },
-        this.remotePeerId
-      );
-
-      // IMPORTANT: connect view-only immediately. Consent belongs to control, not transport.
-      await this.startHostConnection();
-      return;
-    }
-
-    if (message.type === "join_ack") {
-      if (this.role === "controller" && message.from === "host") {
-        this.remotePeerId = message.peerId;
-        this.emit("message", {
-          channel: "system",
-          data: JSON.stringify({
-            type: "peer_join_ack"
-          })
-        });
-        this.log("peer_join_ack", {
-          peerId: message.peerId
-        });
+      if (this.role === "host" && this.localStream) {
+        await this.sendScreen();
       }
-      return;
-    }
+    });
 
-    if (message.from === this.role) return;
+    connection.on("data", (payload) => this.handleData(payload));
 
-    try {
-      if (message.type === "offer" && this.role === "controller") {
-        if (this.remotePeerId && this.remotePeerId !== message.peerId) return;
+    connection.on("close", () => {
+      this.emit("message", {
+        channel: "system",
+        data: JSON.stringify({
+          type: "peer_left"
+        })
+      });
+      this.emit("state", "disconnected");
+      if (this.connection === connection) this.connection = null;
+      this.remotePeerId = "";
+    });
 
-        this.remotePeerId = message.peerId;
-        const pc = this.createPeer();
-
-        await pc.setRemoteDescription(message.description);
-        await this.flushCandidates();
-
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-
-        if (!pc.localDescription) {
-          throw new Error("The browser did not produce a local WebRTC answer.");
-        }
-
-        this.signal(
-          {
-            type: "answer",
-            description: {
-              type: pc.localDescription.type,
-              sdp: pc.localDescription.sdp
-            }
-          },
-          this.remotePeerId
-        );
-
-        this.log("answer_sent", {});
-        return;
-      }
-
-      if (message.type === "answer" && this.role === "host" && this.pc) {
-        if (this.remotePeerId !== message.peerId) return;
-
-        await this.pc.setRemoteDescription(message.description);
-        await this.flushCandidates();
-        this.log("answer_received", {});
-        return;
-      }
-
-      if (message.type === "candidate") {
-        if (this.remotePeerId && this.remotePeerId !== message.peerId) return;
-
-        this.remotePeerId = message.peerId;
-
-        if (!this.pc || !this.pc.remoteDescription) {
-          if (this.pendingCandidates.length < MAX_PENDING_CANDIDATES) {
-            this.pendingCandidates.push(message.candidate);
-          }
-        } else {
-          try {
-            await this.pc.addIceCandidate(message.candidate);
-          } catch (error) {
-            this.log("candidate_rejected", {
-              reason: error.message
-            });
-          }
-        }
-        return;
-      }
-
-      if (message.type === "reject" || message.type === "error") {
-        this.emit("error", {
-          code: message.codeName || "SIGNALING_REJECTED",
-          message: message.message || "The signaling service rejected this session."
-        });
-        return;
-      }
-
-      if (message.type === "leave") {
-        this.emit("message", {
-          channel: "system",
-          data: JSON.stringify({
-            type: "peer_left"
-          })
-        });
-        this.remotePeerId = null;
-        this.closePeerConnection();
-      }
-    } catch (error) {
+    connection.on("error", (error) => {
       this.emit("error", {
-        code: "SIGNALING_HANDSHAKE_FAILED",
-        message: error.message
+        code: "DATA_CONNECTION_FAILED",
+        message: error.message || "Peer data connection failed."
       });
-      this.log("handshake_error", {
-        reason: error.message
-      });
-    }
+    });
+
+    // PeerJS can queue the outbound connection before "open".
+    this.log("data_connection_created", {
+      peerId: connection.peer
+    });
   }
 
-  async flushCandidates() {
-    if (!this.pc?.remoteDescription) return;
-
-    const candidates = this.pendingCandidates.splice(0);
-    for (const candidate of candidates) {
-      try {
-        await this.pc.addIceCandidate(candidate);
-      } catch (error) {
-        this.log("candidate_rejected", {
-          reason: error.message
+  handleData(payload) {
+    let envelope = payload;
+    if (typeof payload === "string") {
+      try { envelope = JSON.parse(payload); } catch {
+        this.emit("error", {
+          code: "INVALID_CHANNEL_MESSAGE",
+          message: "Malformed peer message was rejected."
         });
+        return;
       }
     }
+
+    if (!envelope || typeof envelope !== "object") return;
+
+    const channel = envelope.channel;
+    const data = envelope.data;
+
+    if (!CHANNELS.includes(channel) && channel !== "system") {
+      this.emit("error", {
+        code: "CHANNEL_UNSUPPORTED",
+        message: "Unsupported data channel was rejected."
+      });
+      return;
+    }
+
+    if (channel !== "system") {
+      const serialized = typeof data === "string" ? data : JSON.stringify(data);
+      if (!validateDataChannelMessage(channel, serialized)) {
+        this.emit("error", {
+          code: "INVALID_CHANNEL_MESSAGE",
+          message: "A malformed " + channel + " message was rejected."
+        });
+        return;
+      }
+    }
+
+    this.emit("message", {
+      channel,
+      data
+    });
   }
 
   send(channel, message) {
-    if (!CHANNELS.includes(channel) || this.closed) return false;
+    if (this.closed || !this.connection || this.connection.open !== true) return false;
+    if (!CHANNELS.includes(channel)) return false;
 
-    const payload = typeof message === "string"
-      ? message
-      : JSON.stringify(message);
-
-    if (typeof payload !== "string" || payload.length > 256 * 1024) {
-      return false;
-    }
-
-    const target = this.channels.get(channel);
-
-    if (!target || target.readyState === "connecting") {
-      const queue = this.pendingMessages.get(channel) || [];
-      if (queue.length >= MAX_PENDING_MESSAGES) queue.shift();
-      queue.push(payload);
-      this.pendingMessages.set(channel, queue);
-      return true;
-    }
-
-    if (target.readyState !== "open") return false;
-    if (target.bufferedAmount > 256 * 1024) return false;
+    const data = typeof message === "string" ? message : JSON.stringify(message);
+    const envelope = {
+      channel,
+      data
+    };
 
     try {
-      target.send(payload);
+      this.connection.send(envelope);
       return true;
     } catch (error) {
       this.emit("error", {
@@ -707,24 +369,85 @@ export class PeerSession extends EventTarget {
     }
   }
 
-  async getStats() {
-    if (!this.pc || this.pc.connectionState === "closed") return null;
+  async setLocalStream(stream) {
+    this.localStream = stream || null;
+    if (!stream) {
+      if (this.mediaCall) {
+        try { this.mediaCall.close(); } catch {}
+        this.mediaCall = null;
+      }
+      return;
+    }
 
-    const reports = await this.pc.getStats();
-    const result = {
-      rtt: null,
-      bitrate: null,
-      fps: null,
-      route: "unknown"
-    };
+    if (this.role === "host" && this.connection?.open) {
+      await this.sendScreen();
+    }
+  }
+
+  async sendScreen() {
+    if (this.role !== "host" || !this.peer || !this.remotePeerId || !this.localStream) return;
+
+    if (this.mediaCall) {
+      try { this.mediaCall.close(); } catch {}
+      this.mediaCall = null;
+    }
+
+    try {
+      this.mediaCall = this.peer.call(
+        this.remotePeerId,
+        this.localStream,
+        {
+          metadata: {
+            code: this.code,
+            purpose: "screen"
+          }
+        }
+      );
+
+      this.mediaCall.on("error", (error) => {
+        this.emit("error", {
+          code: "MEDIA_CALL_FAILED",
+          message: error.message || "Screen stream failed."
+        });
+      });
+
+      this.log("screen_call_started", {
+        peerId: this.remotePeerId
+      });
+    } catch (error) {
+      this.emit("error", {
+        code: "MEDIA_CALL_FAILED",
+        message: error.message
+      });
+    }
+  }
+
+  async clearLocalVideo() {
+    this.localStream = null;
+    if (this.mediaCall) {
+      try { this.mediaCall.close(); } catch {}
+      this.mediaCall = null;
+    }
+    this.emit("message", {
+      channel: "system",
+      data: JSON.stringify({
+        type: "screen_stopped"
+      })
+    });
+  }
+
+  async getStats() {
+    const pc = this.connection?.peerConnection;
+    if (!pc?.getStats) return null;
+
+    const reports = await pc.getStats();
+    const result = { rtt: null, bitrate: null, fps: null, route: "unknown" };
 
     let selectedPair = null;
-
     reports.forEach((stat) => {
       if (stat.type === "transport" && stat.selectedCandidatePairId) {
         selectedPair = reports.get(stat.selectedCandidatePairId) || null;
       }
-
       if (!selectedPair &&
           stat.type === "candidate-pair" &&
           stat.state === "succeeded" &&
@@ -737,19 +460,16 @@ export class PeerSession extends EventTarget {
       result.rtt = selectedPair.currentRoundTripTime != null
         ? Math.round(selectedPair.currentRoundTripTime * 1000)
         : null;
-
       const local = selectedPair.localCandidateId
         ? reports.get(selectedPair.localCandidateId)
         : null;
-
       result.route = local?.candidateType === "relay"
         ? "relay"
         : (local?.candidateType || "direct");
     }
 
     const video = [...reports.values()].find(
-      (stat) =>
-        stat.type === "inbound-rtp" &&
+      (stat) => stat.type === "inbound-rtp" &&
         (stat.kind === "video" || stat.mediaType === "video")
     );
 
@@ -771,49 +491,17 @@ export class PeerSession extends EventTarget {
     return result;
   }
 
-  closePeerConnection() {
-    this.channels.forEach((channel) => {
-      try { channel.close(); } catch {}
-    });
-    this.channels.clear();
-
-    try { this.pc?.close(); } catch {}
-    this.pc = null;
-
-    this.pendingCandidates = [];
-    this.pendingMessages.clear();
-    this.negotiationPromise = null;
-    this.statsPrevious = null;
-
-    this.remoteStream.getTracks().forEach((track) => {
-      try { track.stop(); } catch {}
-    });
-    this.remoteStream = new MediaStream();
-  }
-
   close() {
     if (this.closed) return;
-
-    if (this.remotePeerId) {
-      this.signal({ type: "leave" }, this.remotePeerId);
-    }
-
     this.closed = true;
-    this.closePeerConnection();
 
-    try { this.room?.close(); } catch {}
-    try { this.signalingSocket?.close(); } catch {}
+    try { this.connection?.close(); } catch {}
+    try { this.mediaCall?.close(); } catch {}
+    try { this.peer?.destroy(); } catch {}
 
-    this.room = null;
-    this.signalingSocket = null;
+    this.connection = null;
+    this.mediaCall = null;
+    this.peer = null;
     this.emit("state", "closed");
-  }
-
-  log(event, detail) {
-    this.onLog({
-      event,
-      detail,
-      at: new Date().toISOString()
-    });
   }
 }
