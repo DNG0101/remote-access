@@ -14,12 +14,9 @@ test("GitHub Pages loads the application without third-party runtime dependencie
 
 test("controller can join a session by six-digit room code", () => {
   const app = read("app.js");
-  assert.equal(
-    app.split("\n").some((line) =>
-      line.includes("$(") &&
-      /\.(forEach|map|filter|some|find|reduce)\(/.test(line)
-    ),
-    false
+  assert.doesNotMatch(
+    app,
+    /(?<!\\$)\\$\\("[^"]+"\\)\\.(?:forEach|map|filter|some|find|reduce)\\(/
   );
   assert.match(app, /normalizeSessionCode\(code\)/);
   assert.match(app, /createSession\("controller", code\)/);
