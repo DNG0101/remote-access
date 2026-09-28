@@ -94,7 +94,11 @@ test("two browser pages connect by code, deliver screen, grant/revoke control, a
     )
     .toBe(true);
 
-  await host.evaluate(() => window.__testCaptureStreams[0].getVideoTracks()[0].stop());
+  await host.evaluate(() => {
+    const track = window.__testCaptureStreams[0].getVideoTracks()[0];
+    track.stop();
+    track.dispatchEvent(new Event("ended"));
+  });
   await expect(controller.locator("#videoPlaceholder")).toBeVisible({ timeout: 10_000 });
   await host.locator("[data-action='capture']").click();
   await expect
