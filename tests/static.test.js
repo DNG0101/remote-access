@@ -17,10 +17,10 @@ test("controller invite links are parsed by the client",()=>{
   assert.match(app,/createSession\("controller", inviteCode, invitePeerId\)/);
 });
 
-test("host connection starts before control consent",()=>{
+test("host establishes the data connection before optional control",()=>{
   const rtc=read("webrtc.js");
-  assert.match(rtc,/type: "peer_joined"/);
-  assert.match(rtc,/await this\.startHostConnection\(\)/);
-  assert.match(rtc,/await this\.startHostConnection\(\)/);
-assert.match(rtc,/type: "peer_joined"/);
+  assert.match(rtc,/this\.peer\.on\("connection"/);
+  assert.match(rtc,/connection\.on\("open"/);
+  assert.match(rtc,/this\.emit\("state", "connected"\)/);
+  assert.match(rtc,/this\.sendScreen\(\)/);
 });
