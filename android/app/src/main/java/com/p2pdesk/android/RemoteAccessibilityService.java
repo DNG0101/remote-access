@@ -110,7 +110,9 @@ public class RemoteAccessibilityService extends AccessibilityService {
         String key,
         boolean down,
         boolean ctrl,
-        boolean shift
+        boolean shift,
+        boolean alt,
+        boolean meta
     ) {
         RemoteAccessibilityService service = instance;
 
@@ -526,6 +528,16 @@ public class RemoteAccessibilityService extends AccessibilityService {
         start = Math.min(start, text.length());
         end = Math.min(end, text.length());
 
+        if (alt && "Tab".equals(code)) {
+            if (node != null) node.recycle();
+            return globalRecents();
+        }
+
+        if (meta && "KeyD".equals(code)) {
+            if (node != null) node.recycle();
+            return globalHome();
+        }
+
         if (ctrl && "KeyA".equals(code)) {
             boolean result = setSelection(
                 node,
@@ -728,6 +740,15 @@ public class RemoteAccessibilityService extends AccessibilityService {
             "Enter".equals(code) ||
             "NumpadEnter".equals(code)
         ) {
+            if (!node.isEditable() && node.isClickable()) {
+                boolean result =
+                    node.performAction(
+                        AccessibilityNodeInfo.ACTION_CLICK
+                    );
+                node.recycle();
+                return result;
+            }
+
             boolean result = replaceNodeText(
                 node,
                 text.substring(0, start) +

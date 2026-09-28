@@ -477,13 +477,17 @@ public class HostService extends Service
 
             boolean ctrl = hasModifier(modifiers, "CTRL");
             boolean shift = hasModifier(modifiers, "SHIFT");
+            boolean alt = hasModifier(modifiers, "ALT");
+            boolean meta = hasModifier(modifiers, "META");
 
             success = RemoteAccessibilityService.handleKey(
                 message.optString("code"),
                 message.optString("key"),
                 "down".equals(message.optString("action")),
                 ctrl,
-                shift
+                shift,
+                alt,
+                meta
             );
         }
 
