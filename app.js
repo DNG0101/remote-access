@@ -30,7 +30,8 @@ const state = {
   incomingFile: null,
   outgoingFile: null,
   peerCapabilities: null,
-  incomingClipboard: null
+  incomingClipboard: null,
+  completedFile: null
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -136,6 +137,10 @@ function resetModules() {
   state.outgoingFile = null;
   state.peerCapabilities = null;
   state.incomingClipboard = null;
+  if (state.completedFile?.url) {
+    URL.revokeObjectURL(state.completedFile.url);
+  }
+  state.completedFile = null;
   renderChat();
   updateClipboardButton();
 
@@ -228,6 +233,15 @@ async function sendFile(file) {
   }
 
   const id = transferId();
+  if (state.completedFile?.url) {
+    URL.revokeObjectURL(state.completedFile.url);
+    state.completedFile = null;
+  }
+
+  $("[data-action='save-file']").classList.add("hidden");
+  $("[data-action='reject-file']").classList.remove("hidden");
+  $("[data-action='accept-file']").classList.remove("hidden");
+
   state.outgoingFile = {
     id,
     file,
@@ -331,6 +345,9 @@ function showFileOffer(message) {
   $("#fileOfferName").textContent = message.name;
   $("#fileOfferMeta").textContent =
     (message.size / 1024 / 1024).toFixed(2) + " MB · explicit approval required";
+  $("[data-action='save-file']").classList.add("hidden");
+  $("[data-action='reject-file']").classList.remove("hidden");
+  $("[data-action='accept-file']").classList.remove("hidden");
   $("#fileOffer").classList.remove("hidden");
   setModuleStatus("fileStatus", "OFFER", "amber");
 }
@@ -367,7 +384,7 @@ function rejectFile() {
 
 function completeIncomingFile() {
   const incoming = state.incomingFile;
-  if (!incoming) return;
+  if (!incoming || !incoming.accepted) return;
 
   if (
     incoming.received.size !== incoming.totalChunks ||
@@ -389,20 +406,24 @@ function completeIncomingFile() {
   }
 
   const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  const safeName = incoming.name.replace(/[\\/:*?"<>|]/g, "_");
-  anchor.href = url;
-  anchor.download = safeName || "download";
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  const safeName = incoming.name.replace(/[\\/:*?"<>|]/g, "_") || "download";
+
+  state.completedFile = {
+    url,
+    name: safeName
+  };
+  state.incomingFile = null;
+
+  $("#fileOfferName").textContent = safeName;
+  $("#fileOfferMeta").textContent = "Transfer complete · click Save to download";
+  $("#fileOffer").classList.remove("hidden");
+  $("[data-action='reject-file']").classList.add("hidden");
+  $("[data-action='accept-file']").classList.add("hidden");
+  $("[data-action='save-file']").classList.remove("hidden");
 
   setModuleStatus("fileStatus", "RECEIVED", "green");
-  updateFileProgress("Received " + incoming.name, 100);
-  toast("File received: " + incoming.name, "success");
-  state.incomingFile = null;
-  setTimeout(() => $("#fileProgress")?.classList.add("hidden"), 1500);
+  updateFileProgress("Received " + safeName, 100);
+  toast("File received. Save it from the transfer panel.", "success");
 }
 
 function sendChatMessage() {
@@ -512,6 +533,7 @@ function createSession(role = "host", code = uid()) {
   $("#peerStatus").textContent = role === "host" ? "WAITING" : "JOINING";
   $("#captureLabel").textContent = role === "host" ? "Share screen" : "Host screen";
   updateControlButton();
+  updateClipboardButton();
   setConnection("signaling", "amber");
   navigate("sessions");
 
@@ -1130,6 +1152,24 @@ function bindEvents() {
 
   $("[data-action='accept-file']").addEventListener("click", acceptFile);
   $("[data-action='reject-file']").addEventListener("click", rejectFile);
+  $("[data-action='save-file']").addEventListener("click", () => {
+    if (!state.completedFile) return;
+
+    const anchor = document.createElement("a");
+    anchor.href = state.completedFile.url;
+    anchor.download = state.completedFile.name;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+
+    URL.revokeObjectURL(state.completedFile.url);
+    state.completedFile = null;
+    $("[data-action='save-file']").classList.add("hidden");
+    $("[data-action='reject-file']").classList.remove("hidden");
+    setModuleStatus("fileStatus", "READY", "green");
+    $("#fileOffer").classList.add("hidden");
+    setTimeout(() => $("#fileProgress")?.classList.add("hidden"), 500);
+  });
 
   $("[data-action='send-chat']").addEventListener("click", sendChatMessage);
   $("#chatInput").addEventListener("keydown", (event) => {
