@@ -96,8 +96,11 @@ test("two browser pages connect by code, deliver screen, grant/revoke control, a
   await expect(controller.locator("#fileOffer")).toBeVisible({ timeout: 10_000 });
   await expect(controller.locator("#fileOfferName")).toHaveText("p2p-desk-test.txt");
 
-  const downloadPromise = controller.waitForEvent("download");
   await controller.locator("[data-action='accept-file']").click();
+  await expect(controller.locator("#fileProgressValue")).toHaveText("100%");
+  await expect(controller.locator("[data-action='save-file']")).toBeVisible({ timeout: 10_000 });
+  const downloadPromise = controller.waitForEvent("download");
+  await controller.locator("[data-action='save-file']").click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toBe("p2p-desk-test.txt");
   const downloadedPath = await download.path();
@@ -112,8 +115,11 @@ test("two browser pages connect by code, deliver screen, grant/revoke control, a
   await expect(host.locator("#fileOffer")).toBeVisible({ timeout: 10_000 });
   await expect(host.locator("#fileOfferName")).toHaveText("controller-upload.txt");
 
-  const reverseDownloadPromise = host.waitForEvent("download");
   await host.locator("[data-action='accept-file']").click();
+  await expect(host.locator("#fileProgressValue")).toHaveText("100%");
+  await expect(host.locator("[data-action='save-file']")).toBeVisible({ timeout: 10_000 });
+  const reverseDownloadPromise = host.waitForEvent("download");
+  await host.locator("[data-action='save-file']").click();
   const reverseDownload = await reverseDownloadPromise;
   expect(reverseDownload.suggestedFilename()).toBe("controller-upload.txt");
   const reversePath = await reverseDownload.path();
