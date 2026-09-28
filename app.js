@@ -2,8 +2,13 @@ import { PeerSession } from "./webrtc.js";
 import {
   validateInputMessage,
   validateControlMessage,
+  validateChatMessage,
+  validateFileTransferMessage,
+  validateTelemetryMessage,
   generateSessionCode,
-  normalizeSessionCode
+  normalizeSessionCode,
+  MAX_FILE_BYTES,
+  MAX_FILE_CHUNK_BYTES
 } from "./protocol.js";
 
 const config = window.P2P_DESK_CONFIG || {};
@@ -20,7 +25,11 @@ const state = {
   logs: [],
   lastPointerSend: 0,
   activeControlRequestId: null,
-  sessionStartedAt: 0
+  sessionStartedAt: 0,
+  chatMessages: [],
+  incomingFile: null,
+  outgoingFile: null,
+  peerCapabilities: null
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -69,6 +78,362 @@ function updateControlButton() {
     : '<span>⌖</span> ' + (state.controlGranted ? "Control granted" : "Request control");
 }
 
+function setModuleStatus(id, value, tone = "") {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = value;
+  el.className = "module-status" + (tone ? " " + tone : "");
+}
+
+function renderChat() {
+  const list = $("#chatList");
+  if (!list) return;
+
+  if (!state.chatMessages.length) {
+    list.innerHTML = '<div class="chat-empty">Messages are end-to-end over the WebRTC data channel.</div>';
+    return;
+  }
+
+  list.innerHTML = state.chatMessages.slice(-40).map((entry) => {
+    const safe = entry.text.replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;");
+
+    return '<div class="chat-message ' + entry.side + '"><small>' +
+      (entry.side === "me" ? "YOU" : "PEER") +
+      '</small><span>' + safe + '</span></div>';
+  }).join("");
+
+  list.scrollTop = list.scrollHeight;
+}
+
+function addChatMessage(text, side) {
+  state.chatMessages.push({
+    text: String(text),
+    side: side === "me" ? "me" : "peer",
+    at: Date.now()
+  });
+  renderChat();
+}
+
+function resetModules() {
+  state.chatMessages = [];
+  state.incomingFile = null;
+  state.outgoingFile = null;
+  state.peerCapabilities = null;
+  renderChat();
+
+  setModuleStatus("chatStatus", "OFFLINE");
+  setModuleStatus("fileStatus", "READY");
+  $("#fileProgress")?.classList.add("hidden");
+  $("#fileOffer")?.classList.add("hidden");
+  if ($("#fileInput")) $("#fileInput").value = "";
+}
+
+function updateFileProgress(label, percent) {
+  const panel = $("#fileProgress");
+  const bar = $("#fileProgressBar");
+  const value = $("#fileProgressValue");
+  const text = $("#fileProgressLabel");
+
+  if (!panel || !bar || !value || !text) return;
+
+  panel.classList.remove("hidden");
+  bar.value = Math.max(0, Math.min(100, percent));
+  value.textContent = Math.round(bar.value) + "%";
+  text.textContent = label;
+}
+
+function transferId() {
+  return (
+    globalThis.crypto?.randomUUID?.() ||
+    "file-" + Date.now().toString(36) + "-" +
+    Math.random().toString(36).slice(2, 12)
+  ).replace(/[^A-Za-z0-9_-]/g, "");
+}
+
+function bytesToBase64(bytes) {
+  let binary = "";
+  const step = 0x8000;
+
+  for (let index = 0; index < bytes.length; index += step) {
+    binary += String.fromCharCode(
+      ...bytes.subarray(index, Math.min(index + step, bytes.length))
+    );
+  }
+
+  return btoa(binary);
+}
+
+function base64ToBytes(value) {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+
+  for (let index = 0; index < binary.length; index++) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+
+  return bytes;
+}
+
+async function waitForChannel(session, name, timeoutMs = 10_000) {
+  const started = Date.now();
+
+  while (!session.closed && Date.now() - started < timeoutMs) {
+    const channel = session.channels?.get(name);
+    if (channel?.readyState === "open") return channel;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+
+  throw new Error(name + " data channel did not open.");
+}
+
+async function sendFile(file) {
+  if (!state.session || !state.peerConnected) {
+    toast("Connect to a peer before sending a file.", "info");
+    return;
+  }
+
+  if (!(file instanceof File)) return;
+
+  if (file.size > MAX_FILE_BYTES) {
+    toast("Files are limited to 25 MB in the browser client.", "error");
+    return;
+  }
+
+  const totalChunks = Math.max(
+    1,
+    Math.ceil(file.size / MAX_FILE_CHUNK_BYTES)
+  );
+
+  if (totalChunks > 512) {
+    toast("This file is too large for the browser transfer protocol.", "error");
+    return;
+  }
+
+  const id = transferId();
+  state.outgoingFile = {
+    id,
+    file,
+    totalChunks,
+    accepted: false
+  };
+
+  setModuleStatus("fileStatus", "OFFERING", "amber");
+  updateFileProgress("Waiting for peer approval…", 0);
+
+  const sent = state.session.send("file-transfer", {
+    type: "file_offer",
+    transferId: id,
+    name: file.name,
+    mime: file.type || "application/octet-stream",
+    size: file.size,
+    totalChunks
+  });
+
+  if (!sent) {
+    state.outgoingFile = null;
+    setModuleStatus("fileStatus", "READY");
+    $("#fileProgress")?.classList.add("hidden");
+    toast("The file channel is not available yet.", "error");
+    return;
+  }
+
+  toast("File offer sent.", "success");
+}
+
+async function sendOutgoingFile() {
+  const transfer = state.outgoingFile;
+  if (!transfer?.accepted || !state.session) return;
+
+  try {
+    const channel = await waitForChannel(state.session, "file-transfer");
+    const { file, totalChunks, id } = transfer;
+
+    for (let index = 0; index < totalChunks; index++) {
+      const start = index * MAX_FILE_CHUNK_BYTES;
+      const end = Math.min(file.size, start + MAX_FILE_CHUNK_BYTES);
+      const buffer = await file.slice(start, end).arrayBuffer();
+      const data = bytesToBase64(new Uint8Array(buffer));
+
+      while (
+        channel.bufferedAmount > 192 * 1024 &&
+        channel.readyState === "open"
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+
+      if (channel.readyState !== "open") {
+        throw new Error("The file-transfer channel closed.");
+      }
+
+      if (!state.session.send("file-transfer", {
+        type: "file_chunk",
+        transferId: id,
+        index,
+        data
+      })) {
+        throw new Error("A file chunk could not be sent.");
+      }
+
+      updateFileProgress(
+        "Sending " + file.name,
+        ((index + 1) / totalChunks) * 100
+      );
+    }
+
+    state.session.send("file-transfer", {
+      type: "file_complete",
+      transferId: id
+    });
+
+    setModuleStatus("fileStatus", "SENT", "green");
+    toast("File sent successfully.", "success");
+  } catch (error) {
+    setModuleStatus("fileStatus", "FAILED", "red");
+    toast(error.message, "error");
+    logEvent("file_send_failed", { reason: error.message }, "error");
+  } finally {
+    state.outgoingFile = null;
+    setTimeout(() => $("#fileProgress")?.classList.add("hidden"), 800);
+  }
+}
+
+function showFileOffer(message) {
+  state.incomingFile = {
+    id: message.transferId,
+    name: message.name,
+    mime: message.mime,
+    size: message.size,
+    totalChunks: message.totalChunks,
+    chunks: new Array(message.totalChunks),
+    received: new Set(),
+    receivedBytes: 0
+  };
+
+  $("#fileOfferName").textContent = message.name;
+  $("#fileOfferMeta").textContent =
+    (message.size / 1024 / 1024).toFixed(2) + " MB · explicit approval required";
+  $("#fileOffer").classList.remove("hidden");
+  setModuleStatus("fileStatus", "OFFER", "amber");
+}
+
+function acceptFile() {
+  const incoming = state.incomingFile;
+  if (!incoming || !state.session || !state.peerConnected) return;
+
+  state.session.send("file-transfer", {
+    type: "file_accept",
+    transferId: incoming.id
+  });
+
+  $("#fileOffer").classList.add("hidden");
+  updateFileProgress("Receiving " + incoming.name, 0);
+  setModuleStatus("fileStatus", "RECEIVING", "amber");
+}
+
+function rejectFile() {
+  const incoming = state.incomingFile;
+  if (!incoming || !state.session) return;
+
+  state.session.send("file-transfer", {
+    type: "file_reject",
+    transferId: incoming.id
+  });
+
+  state.incomingFile = null;
+  $("#fileOffer").classList.add("hidden");
+  setModuleStatus("fileStatus", "READY");
+  toast("File offer rejected.", "info");
+}
+
+function completeIncomingFile() {
+  const incoming = state.incomingFile;
+  if (!incoming) return;
+
+  if (
+    incoming.received.size !== incoming.totalChunks ||
+    incoming.receivedBytes > incoming.size
+  ) {
+    setModuleStatus("fileStatus", "FAILED", "red");
+    toast("The received file was incomplete.", "error");
+    return;
+  }
+
+  const blob = new Blob(incoming.chunks, {
+    type: incoming.mime || "application/octet-stream"
+  });
+
+  if (blob.size !== incoming.size) {
+    setModuleStatus("fileStatus", "FAILED", "red");
+    toast("The received file size did not match the offer.", "error");
+    return;
+  }
+
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = incoming.name;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30_000);
+
+  setModuleStatus("fileStatus", "RECEIVED", "green");
+  updateFileProgress("Received " + incoming.name, 100);
+  toast("File received: " + incoming.name, "success");
+  state.incomingFile = null;
+  setTimeout(() => $("#fileProgress")?.classList.add("hidden"), 1500);
+}
+
+function sendChatMessage() {
+  if (!state.session || !state.peerConnected) {
+    toast("Connect to a peer before chatting.", "info");
+    return;
+  }
+
+  const input = $("#chatInput");
+  const text = input.value.trim();
+  if (!text) return;
+
+  const message = {
+    type: "chat_message",
+    messageId: transferId(),
+    text,
+    sentAt: Date.now()
+  };
+
+  if (!validateChatMessage(message)) {
+    toast("That message is not valid.", "error");
+    return;
+  }
+
+  if (!state.session.send("chat", message)) {
+    toast("The chat channel is not available.", "error");
+    return;
+  }
+
+  addChatMessage(text, "me");
+  input.value = "";
+}
+
+function sendCapabilities(session) {
+  const message = {
+    type: "capabilities",
+    screen: typeof navigator.mediaDevices?.getDisplayMedia === "function",
+    dataChannels: true,
+    clipboard: Boolean(navigator.clipboard),
+    fileTransfer: true,
+    chat: true,
+    nativeInput: false
+  };
+
+  if (validateTelemetryMessage(message)) {
+    session.send("telemetry", message);
+  }
+}
+
+
 function resetSessionUi() {
   $("#emptySession").classList.remove("hidden");
   $("#activeSession").classList.add("hidden");
@@ -85,6 +450,7 @@ function resetSessionUi() {
   state.peerConnected = false;
   state.controlGranted = false;
   state.activeControlRequestId = null;
+  resetModules();
   updateControlButton();
 }
 
@@ -132,7 +498,7 @@ function createSession(role = "host", code = uid()) {
 
   state.session.connect().then(() => {
     logEvent("session_ready", { role, code: state.code, mode: state.session.signalingMode });
-    if (role === "controller" && !state.session.targetPeerId) {
+    if (role === "controller" && !state.session.remotePeerId) {
       toast("Connecting to the host session…", "info");
     }
   }).catch((error) => {
@@ -196,6 +562,12 @@ function wireSession(session) {
     if (detail?.mode) {
       $("#diagSignaling").title = "Signaling mode: " + detail.mode;
     }
+    if (detail?.state === "connected") {
+      setModuleStatus("chatStatus", "ONLINE", "green");
+      setModuleStatus("fileStatus", "READY", "green");
+      sendCapabilities(session);
+    }
+
     if (detail?.peerId && state.role === "host" && state.session) {
       const inviteButton = $("[data-action='copy-invite']");
       if (inviteButton) inviteButton.dataset.inviteUrl = state.session.inviteUrl;
@@ -203,7 +575,14 @@ function wireSession(session) {
   });
 
   session.on("channel", (detail) => {
-    $("#diagData").textContent = detail.state === "open" ? detail.name + " open" : detail.state;
+    $("#diagData").textContent =
+      detail.state === "open" ? detail.name + " open" : detail.state;
+
+    if (detail.state === "open") {
+      if (detail.name === "chat") setModuleStatus("chatStatus", "ONLINE", "green");
+      if (detail.name === "file-transfer") setModuleStatus("fileStatus", "READY", "green");
+      if (detail.name === "telemetry") sendCapabilities(session);
+    }
   });
 
   session.on("track", ({ stream }) => {
@@ -311,9 +690,125 @@ function wireSession(session) {
         logEvent("clipboard_rejected_no_consent", {}, "error");
         return;
       }
+
+      navigator.clipboard?.writeText(message.text)
+        .then(() => toast("Clipboard text copied to the host browser.", "success"))
+        .catch(() => toast("Host clipboard permission was unavailable.", "error"));
+
       logEvent("clipboard_message_received", {
         characters: typeof message.text === "string" ? message.text.length : 0
       });
+      return;
+    }
+
+    if (channel === "chat") {
+      if (!validateChatMessage(message)) return;
+      addChatMessage(message.text, "peer");
+      return;
+    }
+
+    if (channel === "telemetry") {
+      if (!validateTelemetryMessage(message)) return;
+
+      if (message.type === "capabilities") {
+        state.peerCapabilities = message;
+        setModuleStatus("chatStatus", message.chat ? "ONLINE" : "LIMITED", message.chat ? "green" : "amber");
+        setModuleStatus("fileStatus", message.fileTransfer ? "READY" : "UNSUPPORTED", message.fileTransfer ? "green" : "amber");
+      }
+      return;
+    }
+
+    if (channel === "file-transfer") {
+      if (!validateFileTransferMessage(message)) return;
+
+      if (message.type === "file_offer") {
+        if (state.incomingFile) {
+          state.session?.send("file-transfer", {
+            type: "file_reject",
+            transferId: message.transferId
+          });
+          return;
+        }
+
+        showFileOffer(message);
+        toast("Incoming file: " + message.name, "info");
+        return;
+      }
+
+      if (message.type === "file_accept") {
+        if (state.outgoingFile?.id === message.transferId) {
+          state.outgoingFile.accepted = true;
+          void sendOutgoingFile();
+        }
+        return;
+      }
+
+      if (message.type === "file_reject") {
+        if (state.outgoingFile?.id === message.transferId) {
+          state.outgoingFile = null;
+          $("#fileProgress").classList.add("hidden");
+          setModuleStatus("fileStatus", "READY");
+          toast("Peer rejected the file.", "info");
+        }
+        return;
+      }
+
+      const incoming = state.incomingFile;
+      if (!incoming || incoming.id !== message.transferId) return;
+
+      if (message.type === "file_chunk") {
+        if (
+          incoming.received.has(message.index) ||
+          message.index >= incoming.totalChunks
+        ) {
+          return;
+        }
+
+        let bytes;
+        try {
+          bytes = base64ToBytes(message.data);
+        } catch {
+          setModuleStatus("fileStatus", "FAILED", "red");
+          logEvent("file_chunk_decode_failed", {}, "error");
+          return;
+        }
+
+        incoming.received.add(message.index);
+        incoming.chunks[message.index] = bytes;
+        incoming.receivedBytes += bytes.byteLength;
+
+        if (incoming.receivedBytes > incoming.size) {
+          setModuleStatus("fileStatus", "FAILED", "red");
+          state.incomingFile = null;
+          toast("Incoming file exceeded its declared size.", "error");
+          return;
+        }
+
+        updateFileProgress(
+          "Receiving " + incoming.name,
+          (incoming.received.size / incoming.totalChunks) * 100
+        );
+        return;
+      }
+
+      if (message.type === "file_complete") {
+        completeIncomingFile();
+      }
+      return;
+    }
+  });
+
+  session.on("state", (value) => {
+    if (value === "connected" || value === "completed") {
+      setModuleStatus("chatStatus", "ONLINE", "green");
+      setModuleStatus("fileStatus", "READY", "green");
+    }
+
+    if (value === "disconnected" || value === "closed" || value === "failed") {
+      setModuleStatus("chatStatus", "OFFLINE");
+      if (!state.outgoingFile && !state.incomingFile) {
+        setModuleStatus("fileStatus", value === "failed" ? "FAILED" : "READY");
+      }
     }
   });
 
@@ -482,6 +977,17 @@ async function refreshStats() {
     $("#metricBitrate").textContent = stats.bitrate ?? "—";
     $("#metricFps").textContent = stats.fps ?? "—";
     $("#metricRoute").textContent = stats.route === "unknown" ? "—" : stats.route;
+
+    const telemetry = {
+      type: "stats",
+      at: Date.now(),
+      rtt: stats.rtt,
+      route: stats.route
+    };
+
+    if (state.session?.peerConnected !== false && validateTelemetryMessage(telemetry)) {
+      state.session.send("telemetry", telemetry);
+    }
   } catch (error) {
     logEvent("stats_failed", { reason: error.message }, "error");
   }
@@ -579,6 +1085,31 @@ function bindEvents() {
       return;
     }
     copy(url, "Invite link");
+  });
+
+  $("[data-action='send-file']").addEventListener("click", () => {
+    if (!state.session || !state.peerConnected) {
+      toast("Connect to a peer before sending a file.", "info");
+      return;
+    }
+    $("#fileInput").click();
+  });
+
+  $("#fileInput").addEventListener("change", (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (file) void sendFile(file);
+  });
+
+  $("[data-action='accept-file']").addEventListener("click", acceptFile);
+  $("[data-action='reject-file']").addEventListener("click", rejectFile);
+
+  $("[data-action='send-chat']").addEventListener("click", sendChatMessage);
+  $("#chatInput").addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      sendChatMessage();
+    }
   });
 
   $("[data-action='copy-text']").addEventListener("click", () => {
