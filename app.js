@@ -88,7 +88,7 @@ function resetSessionUi() {
   updateControlButton();
 }
 
-function createSession(role = "host", code = uid(), targetPeerId = "") {
+function createSession(role = "host", code = uid()) {
   if (state.session) {
     try { state.session.close(); } catch {}
   }
@@ -111,7 +111,7 @@ function createSession(role = "host", code = uid(), targetPeerId = "") {
     code: state.code,
     role,
     iceServers: config.iceServers,
-    targetPeerId,
+    signalingUrl: config.signalingUrl,
     onLog: (entry) => logEvent(entry.event, entry.detail)
   });
 
@@ -657,7 +657,7 @@ if (invitePeerId && inviteCode.length === 6) {
     $("[data-role]").forEach((el) => el.classList.toggle("selected", el.dataset.role === "controller"));
     $("#hostForm").classList.add("hidden");
     $("#controllerForm").classList.remove("hidden");
-    createSession("controller", inviteCode, invitePeerId);
+    createSession("controller", inviteCode);
   }, 0);
 }
 renderLogs();
