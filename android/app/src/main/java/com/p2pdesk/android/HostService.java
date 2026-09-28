@@ -293,6 +293,11 @@ public class HostService extends Service
     }
 
     @Override
+    public void onError(String message) {
+        fail(message);
+    }
+
+    @Override
     public void onMessage(
         String channel,
         JSONObject message

@@ -11,6 +11,7 @@ import android.os.Bundle;
 import android.provider.Settings;
 import android.view.Gravity;
 import android.view.ViewGroup;
+import android.text.InputFilter;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
@@ -91,7 +92,7 @@ public class MainActivity extends Activity {
         codeInput.setInputType(
             android.text.InputType.TYPE_CLASS_NUMBER
         );
-        codeInput.setMaxLength(6);
+        codeInput.setFilters(new InputFilter[]{new InputFilter.LengthFilter(6)});
         root.addView(
             codeInput,
             fieldParams()
@@ -298,7 +299,8 @@ public class MainActivity extends Activity {
                 return;
             }
 
-            Uri destination = data;
+            Uri destination = data.getData();
+            if (destination == null) return;
             String sourcePath =
                 pendingFilePath;
 

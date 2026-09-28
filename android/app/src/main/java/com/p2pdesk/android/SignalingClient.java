@@ -63,7 +63,7 @@ public final class SignalingClient {
                         .put("announce", true)
                         .put("role", "host");
 
-                    send(envelope(announce));
+                    send(envelope(announce).toString());
                     main.post(listener::onConnected);
                 } catch (Exception error) {
                     main.post(() ->
