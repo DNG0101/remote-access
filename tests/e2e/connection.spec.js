@@ -31,7 +31,7 @@ test("two browser pages connect by six-digit code, deliver screen, grant control
   expect(code).toMatch(/^\d{6}$/);
 
   const controller = await context.newPage();
-  await controller.goto("/?signal=ws%3A%2F%2F127.0.0.1%3A4174");
+  await controller.goto("/?signal=ws%3A%2F%2F127.0.0.1%3A4174#sessions");
   await controller.locator("[data-role='controller']").click();
   await controller.locator("#joinCode").fill(code);
   await controller.locator("[data-action='join-code']").click();
