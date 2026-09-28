@@ -123,7 +123,9 @@ public class RemoteAccessibilityService extends AccessibilityService {
             code,
             key,
             ctrl,
-            shift
+            shift,
+            alt,
+            meta
         );
     }
 
@@ -498,7 +500,9 @@ public class RemoteAccessibilityService extends AccessibilityService {
         String code,
         String key,
         boolean ctrl,
-        boolean shift
+        boolean shift,
+        boolean alt,
+        boolean meta
     ) {
         AccessibilityNodeInfo node =
             focusedInput();
