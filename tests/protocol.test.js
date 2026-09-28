@@ -114,6 +114,7 @@ test("PeerSession discovers a peer from roster-style signaling", async () => {
     });
 
     let joinedPeer = "";
+    session.ensurePeerConnection = async () => null;
     session.on("message", ({ channel, data }) => {
       if (channel === "system" && data.type === "peer_joined") {
         joinedPeer = data.peerId;
