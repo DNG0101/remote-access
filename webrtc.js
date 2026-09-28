@@ -727,16 +727,24 @@ export class PeerSession extends EventTarget {
   close() {
     if (this.closed) return;
 
-    if (this.remotePeerId) {
+    const socket = this.signalingSocket;
+    const hasOpenSignalingSocket = socket?.readyState === WebSocket.OPEN;
+
+    if (this.remotePeerId && hasOpenSignalingSocket) {
       this.sendSignal({
         kind: "leave"
       }, this.remotePeerId, false);
+
+      // Give the relay a small delivery window before tearing down the socket.
+      setTimeout(() => {
+        try { socket.close(); } catch {}
+      }, 200);
+    } else {
+      try { socket?.close(); } catch {}
     }
 
     this.closed = true;
     this.closePeerConnection();
-
-    try { this.signalingSocket?.close(); } catch {}
     this.signalingSocket = null;
 
     this.emit("state", "closed");
