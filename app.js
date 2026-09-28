@@ -163,8 +163,16 @@ function wireSession(session) {
       toast("WebRTC connection failed. Check the signaling path and network.", "error");
     }
     if (value === "disconnected") {
+      state.peerConnected = false;
+      state.controlGranted = false;
+      state.activeControlRequestId = null;
+      updateControlButton();
       setConnection("disconnected", "red");
       $("#peerStatus").textContent = "DISCONNECTED";
+      $("#consentBanner").classList.add("hidden");
+      $("#remoteVideo").srcObject = null;
+      $("#remoteVideo").classList.remove("show");
+      $("#videoPlaceholder").classList.remove("hidden");
     }
     if (value === "closed") {
       setConnection("closed", "gray");
@@ -199,9 +207,11 @@ function wireSession(session) {
   });
 
   session.on("track", ({ stream }) => {
-    $("#remoteVideo").srcObject = stream;
-    $("#remoteVideo").classList.add("show");
+    const video = $("#remoteVideo");
+    video.srcObject = stream;
+    video.classList.add("show");
     $("#videoPlaceholder").classList.add("hidden");
+    void video.play().catch(() => {});
     logEvent("remote_track", { tracks: stream.getTracks().length });
   });
 
@@ -228,7 +238,12 @@ function wireSession(session) {
         state.activeControlRequestId = null;
         $("#peerLabel").textContent = state.role === "host" ? "Waiting for a controller" : "Host disconnected";
         $("#peerSubtext").textContent = state.role === "host" ? "Share the code to invite a viewer" : "Start a new session to reconnect";
-        $("#peerStatus").textContent = "WAITING";
+        $("#peerStatus").textContent = state.role === "host" ? "WAITING" : "DISCONNECTED";
+        $("#consentBanner").classList.add("hidden");
+        $("#remoteVideo").srcObject = null;
+        $("#remoteVideo").classList.remove("show");
+        $("#videoPlaceholder").classList.remove("hidden");
+        setConnection(state.role === "host" ? "waiting" : "disconnected", state.role === "host" ? "amber" : "red");
         updateControlButton();
       }
       return;
@@ -380,7 +395,7 @@ function sendControlRequest() {
     return;
   }
 
-  const requestId = globalThis.crypto?.randomUUID?.() || "req-" + Date.now() + "-" + Math.random().toString(16).slice(2);
+  const requestId = globalThis.crypto?.randomUUID?.() || "req-" + Date.now().toString(16) + "-" + Math.random().toString(16).slice(2);
   state.activeControlRequestId = requestId;
   state.session.send("control", {
     type: "control_request",
@@ -420,12 +435,24 @@ async function grantControl(granted) {
   logEvent("control_decision", { granted: state.controlGranted });
 }
 
-function disconnect() {
-  state.capture?.getTracks().forEach((track) => track.stop());
-  state.capture = null;
-  try { state.session?.close(); } catch {}
+async function disconnect() {
+  const session = state.session;
   state.session = null;
   state.sessionStartedAt = 0;
+
+  if (session) {
+    try {
+      await session.close();
+    } catch (error) {
+      logEvent("session_close_failed", { reason: error.message }, "error");
+    }
+  }
+
+  state.capture?.getTracks().forEach((track) => {
+    try { track.stop(); } catch {}
+  });
+  state.capture = null;
+
   resetSessionUi();
   navigate("sessions");
   logEvent("session_closed", {});
