@@ -25,6 +25,18 @@ test("two browser pages connect by code, deliver screen, grant/revoke control, a
       window.__testCaptureStreams.push(stream);
       return stream;
     };
+
+    let hostClipboard = "";
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        readText: async () => hostClipboard,
+        writeText: async (value) => {
+          hostClipboard = value;
+          window.__hostClipboard = value;
+        }
+      }
+    });
   });
 
   await host.goto("/?signal=ws%3A%2F%2F127.0.0.1%3A4174");
@@ -49,20 +61,6 @@ test("two browser pages connect by code, deliver screen, grant/revoke control, a
       value: {
         readText: async () => localClipboard,
         writeText: async (value) => { localClipboard = value; }
-      }
-    });
-  });
-
-  await host.addInitScript(() => {
-    let hostClipboard = "";
-    Object.defineProperty(navigator, "clipboard", {
-      configurable: true,
-      value: {
-        readText: async () => hostClipboard,
-        writeText: async (value) => {
-          hostClipboard = value;
-          window.__hostClipboard = value;
-        }
       }
     });
   });
