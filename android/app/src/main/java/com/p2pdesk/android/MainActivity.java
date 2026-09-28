@@ -24,11 +24,13 @@ public class MainActivity extends Activity {
     private static final int REQUEST_SAVE = 8301;
     private static final int REQUEST_OPEN_FILE = 8302;
     private static final int REQUEST_MICROPHONE = 8303;
+    private static final int REQUEST_MICROPHONE = 8303;
 
     private EditText codeInput;
     private EditText signalingInput;
     private CheckBox controlCheckbox;
     private CheckBox clipboardCheckbox;
+    private CheckBox microphoneCheckbox;
     private CheckBox microphoneCheckbox;
     private TextView statusText;
     private TextView accessText;
@@ -300,7 +302,7 @@ public class MainActivity extends Activity {
 
         root.addView(
             text(
-                "On the PC: open the web client, choose Controller, enter the same code, join, request control, then use the remote screen. Click = tap, right click = long press, wheel = scroll, and the web mobile keyboard sends text to the focused Android field.",
+                "On the PC: open the web client, choose Controller, enter the same code, join, request control, then use the remote screen. Click = tap, drag = touch gesture, right click = long press, wheel = scroll, device buttons control Android system actions, and the web keyboard can type into the focused Android field.",
                 14
             )
         );
@@ -317,6 +319,21 @@ public class MainActivity extends Activity {
         if (!code.matches("\\d{6}")) {
             codeInput.setError(
                 "Enter a 6-digit session code."
+            );
+            return;
+        }
+
+        if (
+            microphoneCheckbox != null &&
+            microphoneCheckbox.isChecked() &&
+            Build.VERSION.SDK_INT >= 23 &&
+            checkSelfPermission(
+                Manifest.permission.RECORD_AUDIO
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(
+                new String[]{Manifest.permission.RECORD_AUDIO},
+                REQUEST_MICROPHONE
             );
             return;
         }
@@ -344,6 +361,18 @@ public class MainActivity extends Activity {
             resultCode,
             data
         );
+
+        if (requestCode == REQUEST_MICROPHONE) {
+            if (resultCode == RESULT_OK) {
+                requestCapture();
+            } else {
+                if (microphoneCheckbox != null) {
+                    microphoneCheckbox.setChecked(false);
+                }
+                requestCapture();
+            }
+            return;
+        }
 
         if (requestCode == REQUEST_MICROPHONE) {
             if (resultCode == RESULT_OK) {
