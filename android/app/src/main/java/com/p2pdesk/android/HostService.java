@@ -7,8 +7,11 @@ import android.app.Service;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Intent;
+import android.database.Cursor;
+import android.net.Uri;
 import android.os.Build;
 import android.os.IBinder;
+import android.provider.OpenableColumns;
 
 import org.json.JSONObject;
 
@@ -26,6 +29,8 @@ public class HostService extends Service
         "p2pdesk_remote";
     private static final int MAX_FILE_BYTES =
         25 * 1024 * 1024;
+    private static final int MAX_FILE_CHUNK_BYTES =
+        160 * 1024;
 
     private static volatile HostService instance;
 
@@ -44,6 +49,35 @@ public class HostService extends Service
     private int incomingReceived;
     private int incomingBytes;
     private java.io.File lastReceivedFile;
+    private volatile OutgoingFile outgoingFile;
+    private long incomingSize;
+    private final java.util.List<String> chatHistory =
+        new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    private static final class OutgoingFile {
+        final Uri uri;
+        final String id;
+        final String name;
+        final String mime;
+        final long size;
+        final int totalChunks;
+
+        OutgoingFile(
+            Uri uri,
+            String id,
+            String name,
+            String mime,
+            long size,
+            int totalChunks
+        ) {
+            this.uri = uri;
+            this.id = id;
+            this.name = name;
+            this.mime = mime;
+            this.size = size;
+            this.totalChunks = totalChunks;
+        }
+    }
 
     public static HostService getInstance() {
         return instance;
@@ -373,137 +407,113 @@ public class HostService extends Service
         );
     }
 
-    private void handleInput(
-        JSONObject message
-    ) {
+    private void handleInput(JSONObject message) {
         if (!allowControl) return;
 
-        String type =
-            message.optString("type");
-
+        String type = message.optString("type");
         boolean success = false;
 
-        if ("mouse_button".equals(type)) {
-            String action =
-                message.optString("action");
+        if ("android_action".equals(type)) {
+            success = RemoteAccessibilityService.systemAction(
+                message.optString("action")
+            );
+        } else if ("mouse_button".equals(type)) {
+            String action = message.optString("action");
+            float x = (float) message.optDouble("x", 0.5);
+            float y = (float) message.optDouble("y", 0.5);
+            String button = message.optString("button");
 
-            if ("down".equals(action) ||
-                "double".equals(action)) {
-                float x =
-                    (float)
-                        message.optDouble(
-                            "x",
-                            0.5
-                        );
-                float y =
-                    (float)
-                        message.optDouble(
-                            "y",
-                            0.5
-                        );
-
-                String button =
-                    message.optString(
-                        "button"
-                    );
-
-                if ("right".equals(button)) {
-                    success =
-                        RemoteAccessibilityService
-                            .longPress(x, y);
-                } else {
-                    success =
-                        RemoteAccessibilityService
-                            .tap(x, y);
-
-                    if ("double".equals(action)) {
-                        try {
-                            Thread.sleep(90L);
-                        } catch (
-                            InterruptedException ignored
-                        ) {
-                            Thread.currentThread()
-                                .interrupt();
-                        }
-
-                        success =
-                            RemoteAccessibilityService
-                                .tap(x, y);
+            if ("right".equals(button) && "down".equals(action)) {
+                success = RemoteAccessibilityService.longPress(x, y);
+            } else if ("double".equals(action) && "left".equals(button)) {
+                success = RemoteAccessibilityService.tap(x, y);
+                if (success) {
+                    try {
+                        Thread.sleep(80L);
+                    } catch (InterruptedException ignored) {
+                        Thread.currentThread().interrupt();
                     }
+                    success = RemoteAccessibilityService.tap(x, y);
                 }
-            }
-        } else if ("scroll".equals(type)) {
-            double dy =
-                message.optDouble(
-                    "deltaY",
-                    0.0
-                );
-
-            float startY =
-                dy > 0
-                    ? 0.68f
-                    : 0.32f;
-            float endY =
-                dy > 0
-                    ? 0.32f
-                    : 0.68f;
-
-            success =
-                RemoteAccessibilityService
-                    .swipe(
-                        0.5f,
-                        startY,
-                        0.5f,
-                        endY,
-                        380L
-                    );
-        } else if ("text_input".equals(type)) {
-            success =
-                RemoteAccessibilityService
-                    .setFocusedText(
-                        message.optString(
-                            "text",
-                            ""
-                        )
-                    );
-        } else if (
-            "keyboard".equals(type) &&
-            "down".equals(
-                message.optString(
-                    "action"
-                )
-            )
-        ) {
-            String code =
-                message.optString("code");
-
-            if ("Escape".equals(code) ||
-                "Backspace".equals(code) &&
-                message.optString("key").isEmpty()) {
-                success =
-                    RemoteAccessibilityService
-                        .globalBack();
-            } else if ("Home".equals(code)) {
-                success =
-                    RemoteAccessibilityService
-                        .globalHome();
-            } else if ("F6".equals(code)) {
-                success =
-                    RemoteAccessibilityService
-                        .globalRecents();
+            } else if ("down".equals(action) && "left".equals(button)) {
+                success = RemoteAccessibilityService.beginDrag(x, y);
+            } else if ("down".equals(action) && "middle".equals(button)) {
+                success = RemoteAccessibilityService.beginDrag(x, y);
+            } else if ("up".equals(action)) {
+                success = RemoteAccessibilityService.endDrag(x, y);
             }
         } else if ("mouse_move".equals(type)) {
-            success = true;
+            float x = (float) message.optDouble("x", 0.5);
+            float y = (float) message.optDouble("y", 0.5);
+            success = RemoteAccessibilityService.moveDrag(x, y);
+        } else if ("scroll".equals(type)) {
+            float x = (float) message.optDouble("x", 0.5);
+            float y = (float) message.optDouble("y", 0.5);
+            double dx = message.optDouble("deltaX", 0.0);
+            double dy = message.optDouble("deltaY", 0.0);
+
+            if (Math.abs(dx) > Math.abs(dy)) {
+                float endX = clampNorm(
+                    x + (float) (dx > 0 ? -0.30 : 0.30)
+                );
+                success = RemoteAccessibilityService.swipe(
+                    x, y, endX, y, 300L
+                );
+            } else {
+                float endY = clampNorm(
+                    y + (float) (dy > 0 ? -0.30 : 0.30)
+                );
+                success = RemoteAccessibilityService.swipe(
+                    x, y, x, endY, 300L
+                );
+            }
+        } else if ("text_input".equals(type)) {
+            success = RemoteAccessibilityService.setFocusedText(
+                message.optString("text", "")
+            );
+        } else if ("keyboard".equals(type)) {
+            org.json.JSONArray modifiers =
+                message.optJSONArray("modifiers");
+
+            boolean ctrl = hasModifier(modifiers, "CTRL");
+            boolean shift = hasModifier(modifiers, "SHIFT");
+
+            success = RemoteAccessibilityService.handleKey(
+                message.optString("code"),
+                message.optString("key"),
+                "down".equals(message.optString("action")),
+                ctrl,
+                shift
+            );
         }
 
         if (success) {
             setStatus("CONTROL_ACTIVE");
-        } else if (!"mouse_move".equals(type)) {
-            setStatus(
-                "INPUT_UNAVAILABLE_" +
-                type
-            );
+        } else if (
+            !"mouse_move".equals(type) &&
+            !"keyboard".equals(type)
+        ) {
+            setStatus("INPUT_UNAVAILABLE_" + type);
         }
+    }
+
+    private static boolean hasModifier(
+        org.json.JSONArray modifiers,
+        String value
+    ) {
+        if (modifiers == null) return false;
+
+        for (int i = 0; i < modifiers.length(); i++) {
+            if (value.equals(modifiers.optString(i))) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static float clampNorm(float value) {
+        return Math.max(0f, Math.min(1f, value));
     }
 
     private void handleClipboard(
@@ -534,48 +544,31 @@ public class HostService extends Service
         setStatus("CLIPBOARD_RECEIVED");
     }
 
-    private void handleFile(
-        JSONObject message
-    ) throws Exception {
-        String type =
-            message.optString("type");
+    private void handleFile(JSONObject message) throws Exception {
+        String type = message.optString("type");
 
         if ("file_offer".equals(type)) {
-            int size =
-                message.optInt(
-                    "size",
-                    -1
-                );
-            int chunks =
-                message.optInt(
-                    "totalChunks",
-                    -1
-                );
+            int size = message.optInt("size", -1);
+            int chunks = message.optInt("totalChunks", -1);
 
-            if (size < 0 ||
+            if (
+                size < 0 ||
                 size > MAX_FILE_BYTES ||
                 chunks < 0 ||
-                chunks > 512) {
+                chunks > 512
+            ) {
                 return;
             }
 
             incomingFileId =
-                message.optString(
-                    "transferId"
-                );
-
+                message.optString("transferId");
             incomingFileName =
                 sanitize(
-                    message.optString(
-                        "name",
-                        "download"
-                    )
+                    message.optString("name", "download")
                 );
-
+            incomingSize = size;
             incomingTotal = chunks;
-            incomingChunks =
-                new byte[chunks][];
-
+            incomingChunks = new byte[chunks][];
             incomingReceived = 0;
             incomingBytes = 0;
 
@@ -594,21 +587,57 @@ public class HostService extends Service
                 );
             }
 
-            setStatus("FILE_RECEIVING");
+            if (incomingTotal == 0) {
+                finalizeIncomingFile();
+            } else {
+                setStatus("FILE_RECEIVING");
+            }
             return;
         }
 
-        if ("file_chunk".equals(type) &&
-            incomingChunks != null) {
-            int index =
-                message.optInt(
-                    "index",
-                    -1
-                );
+        if ("file_accept".equals(type)) {
+            OutgoingFile transfer = outgoingFile;
 
-            if (index < 0 ||
+            if (
+                transfer == null ||
+                !transfer.id.equals(
+                    message.optString("transferId")
+                )
+            ) {
+                return;
+            }
+
+            new Thread(() -> sendOutgoingFile(transfer)).start();
+            return;
+        }
+
+        if ("file_reject".equals(type)) {
+            OutgoingFile transfer = outgoingFile;
+
+            if (
+                transfer != null &&
+                transfer.id.equals(
+                    message.optString("transferId")
+                )
+            ) {
+                outgoingFile = null;
+                setStatus("FILE_REJECTED");
+            }
+            return;
+        }
+
+        if (
+            "file_chunk".equals(type) &&
+            incomingChunks != null
+        ) {
+            int index =
+                message.optInt("index", -1);
+
+            if (
+                index < 0 ||
                 index >= incomingTotal ||
-                incomingChunks[index] != null) {
+                incomingChunks[index] != null
+            ) {
                 return;
             }
 
@@ -622,78 +651,414 @@ public class HostService extends Service
                         )
                     );
 
-            incomingChunks[index] = bytes;
-            incomingReceived++;
-            incomingBytes += bytes.length;
-
-            if (incomingBytes > MAX_FILE_BYTES) {
+            if (bytes.length > MAX_FILE_CHUNK_BYTES) {
                 incomingChunks = null;
                 return;
             }
 
-            if (incomingReceived == incomingTotal) {
-                java.io.File file =
-                    new java.io.File(
-                        getCacheDir(),
-                        incomingFileName
-                    );
+            incomingChunks[index] = bytes;
+            incomingReceived++;
+            incomingBytes += bytes.length;
 
-                try (
-                    java.io.FileOutputStream output =
-                        new java.io.FileOutputStream(
-                            file
-                        )
-                ) {
-                    for (byte[] chunk :
-                        incomingChunks) {
-                        if (chunk == null) return;
-                        output.write(chunk);
-                    }
-                }
-
-                lastReceivedFile = file;
+            if (incomingBytes > incomingSize ||
+                incomingBytes > MAX_FILE_BYTES) {
                 incomingChunks = null;
-                setStatus("FILE_READY");
+                return;
+            }
+
+            setStatus(
+                "FILE_RECEIVING_" +
+                incomingReceived + "/" +
+                incomingTotal
+            );
+            return;
+        }
+
+        if ("file_complete".equals(type)) {
+            if (
+                incomingChunks != null &&
+                incomingReceived == incomingTotal
+            ) {
+                finalizeIncomingFile();
             }
         }
+    }
+
+    private void finalizeIncomingFile() throws Exception {
+        if (incomingChunks == null) return;
+        if (incomingReceived != incomingTotal) return;
+        if (incomingBytes != incomingSize) {
+            incomingChunks = null;
+            setStatus("FILE_FAILED_SIZE");
+            return;
+        }
+
+        java.io.File file =
+            new java.io.File(
+                getCacheDir(),
+                incomingFileName
+            );
+
+        try (
+            java.io.FileOutputStream output =
+                new java.io.FileOutputStream(file)
+        ) {
+            for (byte[] chunk : incomingChunks) {
+                if (chunk == null) return;
+                output.write(chunk);
+            }
+        }
+
+        lastReceivedFile = file;
+        incomingChunks = null;
+        setStatus("FILE_READY");
+    }
+
+    private void sendOutgoingFile(
+        OutgoingFile transfer
+    ) {
+        try (
+            java.io.InputStream input =
+                getContentResolver()
+                    .openInputStream(transfer.uri)
+        ) {
+            if (input == null) {
+                throw new IllegalStateException(
+                    "The selected file could not be opened."
+                );
+            }
+
+            byte[] buffer =
+                new byte[MAX_FILE_CHUNK_BYTES];
+
+            for (int index = 0;
+                 index < transfer.totalChunks;
+                 index++) {
+
+                int offset = 0;
+                while (
+                    offset < buffer.length
+                ) {
+                    int count =
+                        input.read(
+                            buffer,
+                            offset,
+                            buffer.length - offset
+                        );
+
+                    if (count < 0) break;
+                    offset += count;
+
+                    if (count == 0) break;
+                }
+
+                if (offset <= 0) {
+                    throw new IllegalStateException(
+                        "Unexpected end of selected file."
+                    );
+                }
+
+                String encoded =
+                    android.util.Base64
+                        .encodeToString(
+                            buffer,
+                            0,
+                            offset,
+                            android.util.Base64.NO_WRAP
+                        );
+
+                if (
+                    host == null ||
+                    !host.send(
+                        "file-transfer",
+                        new JSONObject()
+                            .put(
+                                "type",
+                                "file_chunk"
+                            )
+                            .put(
+                                "transferId",
+                                transfer.id
+                            )
+                            .put(
+                                "index",
+                                index
+                            )
+                            .put(
+                                "data",
+                                encoded
+                            )
+                    )
+                ) {
+                    throw new IllegalStateException(
+                        "The file-transfer channel closed."
+                    );
+                }
+
+                setStatus(
+                    "FILE_SENDING_" +
+                    (index + 1) + "/" +
+                    transfer.totalChunks
+                );
+            }
+
+            if (
+                host == null ||
+                !host.send(
+                    "file-transfer",
+                    new JSONObject()
+                        .put(
+                            "type",
+                            "file_complete"
+                        )
+                        .put(
+                            "transferId",
+                            transfer.id
+                        )
+                )
+            ) {
+                throw new IllegalStateException(
+                    "The file completion message could not be sent."
+                );
+            }
+
+            setStatus("FILE_SENT");
+        } catch (Exception error) {
+            fail(
+                "Android file send failed: " +
+                error.getMessage()
+            );
+        } finally {
+            if (outgoingFile == transfer) {
+                outgoingFile = null;
+            }
+        }
+    }
+
+    private void handleChat(JSONObject message) {
+        if (!"chat_message".equals(
+            message.optString("type")
+        )) {
+            return;
+        }
+
+        String text =
+            message.optString("text", "").trim();
+
+        if (text.isEmpty()) return;
+
+        chatHistory.add("PC: " + text);
+
+        while (chatHistory.size() > 40) {
+            chatHistory.remove(0);
+        }
+
+        setStatus("CHAT_RECEIVED");
     }
 
     public boolean sendChat(
         String text
     ) {
-        if (host == null ||
+        if (
+            host == null ||
             text == null ||
-            text.trim().isEmpty()) {
+            text.trim().isEmpty()
+        ) {
             return false;
         }
 
+        String value = text.trim();
+
         try {
-            return host.send(
-                "chat",
-                new JSONObject()
-                    .put(
-                        "type",
-                        "chat_message"
-                    )
-                    .put(
-                        "messageId",
-                        java.util.UUID
-                            .randomUUID()
-                            .toString()
-                    )
-                    .put(
-                        "text",
-                        text.trim()
-                    )
-                    .put(
-                        "sentAt",
-                        System.currentTimeMillis()
-                    )
-            );
+            boolean sent =
+                host.send(
+                    "chat",
+                    new JSONObject()
+                        .put(
+                            "type",
+                            "chat_message"
+                        )
+                        .put(
+                            "messageId",
+                            java.util.UUID
+                                .randomUUID()
+                                .toString()
+                        )
+                        .put(
+                            "text",
+                            value
+                        )
+                        .put(
+                            "sentAt",
+                            System.currentTimeMillis()
+                        )
+                );
+
+            if (sent) {
+                chatHistory.add("PHONE: " + value);
+                while (chatHistory.size() > 40) {
+                    chatHistory.remove(0);
+                }
+            }
+
+            return sent;
         } catch (Exception error) {
             fail(error.getMessage());
             return false;
         }
+    }
+
+    public String getChatTranscript() {
+        return String.join("\n", chatHistory);
+    }
+
+    public boolean sendFileToPeer(Uri uri) {
+        if (host == null || uri == null) return false;
+
+        try {
+            long size = queryFileSize(uri);
+
+            if (size < 0 || size > MAX_FILE_BYTES) {
+                setStatus("FILE_REJECTED_SIZE");
+                return false;
+            }
+
+            String name = queryFileName(uri);
+            if (name == null || name.trim().isEmpty()) {
+                name = "upload";
+            }
+
+            name = sanitize(name);
+
+            String mime =
+                getContentResolver().getType(uri);
+
+            if (mime == null) {
+                mime = "application/octet-stream";
+            }
+
+            int totalChunks =
+                size == 0
+                    ? 0
+                    : (int) Math.ceil(
+                        (double) size /
+                        MAX_FILE_CHUNK_BYTES
+                    );
+
+            if (totalChunks > 512) {
+                setStatus("FILE_REJECTED_CHUNKS");
+                return false;
+            }
+
+            String id =
+                java.util.UUID
+                    .randomUUID()
+                    .toString()
+                    .replace("-", "");
+
+            OutgoingFile transfer =
+                new OutgoingFile(
+                    uri,
+                    id,
+                    name,
+                    mime,
+                    size,
+                    totalChunks
+                );
+
+            outgoingFile = transfer;
+
+            boolean sent =
+                host.send(
+                    "file-transfer",
+                    new JSONObject()
+                        .put(
+                            "type",
+                            "file_offer"
+                        )
+                        .put(
+                            "transferId",
+                            id
+                        )
+                        .put(
+                            "name",
+                            name
+                        )
+                        .put(
+                            "mime",
+                            mime
+                        )
+                        .put(
+                            "size",
+                            size
+                        )
+                        .put(
+                            "totalChunks",
+                            totalChunks
+                        )
+                );
+
+            if (!sent) {
+                outgoingFile = null;
+                return false;
+            }
+
+            setStatus("FILE_OFFER_SENT");
+            return true;
+        } catch (Exception error) {
+            fail(
+                "Android file offer failed: " +
+                error.getMessage()
+            );
+            return false;
+        }
+    }
+
+    private long queryFileSize(Uri uri) {
+        try (
+            Cursor cursor =
+                getContentResolver().query(
+                    uri,
+                    new String[]{OpenableColumns.SIZE},
+                    null,
+                    null,
+                    null
+                )
+        ) {
+            if (
+                cursor != null &&
+                cursor.moveToFirst() &&
+                !cursor.isNull(0)
+            ) {
+                return cursor.getLong(0);
+            }
+        } catch (Exception ignored) {
+        }
+
+        return -1;
+    }
+
+    private String queryFileName(Uri uri) {
+        try (
+            Cursor cursor =
+                getContentResolver().query(
+                    uri,
+                    new String[]{OpenableColumns.DISPLAY_NAME},
+                    null,
+                    null,
+                    null
+                )
+        ) {
+            if (
+                cursor != null &&
+                cursor.moveToFirst()
+            ) {
+                return cursor.getString(0);
+            }
+        } catch (Exception ignored) {
+        }
+
+        return null;
     }
 
     public boolean sendClipboardToPeer() {
