@@ -24,6 +24,8 @@ test("controller can join a session by six-digit room code", () => {
   assert.match(app, /validateFileTransferMessage/);
   assert.match(app, /validateTelemetryMessage/);
   assert.match(app, /NativeAgentClient/);
+  assert.match(app, /data-action='mobile-keyboard'/);
+  assert.match(app, /type: "text_input"/);
 });
 
 test("host establishes WebRTC before optional control consent", () => {
@@ -38,13 +40,14 @@ test("host establishes WebRTC before optional control consent", () => {
   assert.match(rtc, /kind: "leave"/);
   assert.match(rtc, /queueNegotiation/);
   assert.match(rtc, /flushPendingMessages/);
+  assert.match(rtc, /sys === "roster"/);
 });
 
 test("public client is configured for a WSS signaling endpoint", () => {
   const config = read("config.js");
   assert.match(config, /wss:\/\//);
   assert.match(config, /signalingUrl/);
-  assert.match(config, /appVersion: "0\.4\.0"/);
+  assert.match(config, /appVersion: "0\.5\.0"/);
 });
 
 
