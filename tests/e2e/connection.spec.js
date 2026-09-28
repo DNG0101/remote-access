@@ -42,7 +42,6 @@ test("two browser pages connect by code, deliver screen, grant/revoke control, a
 
   await host.goto("/?signal=ws%3A%2F%2F127.0.0.1%3A4174&agent=ws%3A%2F%2F127.0.0.1%3A4175");
   await expect(host.locator("[data-action='create-host']").first()).toBeVisible();
-  await host.locator("label.toggle-row").filter({ hasText: "Allow clipboard sharing" }).click();
   await host.locator("[data-action='create-host']").first().click();
 
   await expect(host.locator("#diagSignaling")).toHaveText("connected", { timeout: 10_000 });
@@ -52,6 +51,7 @@ test("two browser pages connect by code, deliver screen, grant/revoke control, a
   // Start capture before the controller joins so the initial SDP offer must include media.
   await host.locator("[data-action='capture']").click();
   await expect(host.locator("#captureLabel")).toHaveText("Screen sharing");
+  await host.locator("label.toggle-row").filter({ hasText: "Allow clipboard sharing" }).click();
 
   const controller = await context.newPage();
   controller.on("pageerror", (error) => browserErrors.push("controller: " + error.message));

@@ -1287,6 +1287,25 @@ function bindEvents() {
     event.target.setSelectionRange(event.target.value.length, event.target.value.length);
   });
 
+  $("#allowControl")?.addEventListener("change", (event) => {
+    state.allowControl = Boolean(event.currentTarget.checked);
+
+    if (
+      state.session &&
+      state.peerConnected &&
+      state.role === "host" &&
+      !state.allowControl &&
+      state.controlGranted
+    ) {
+      grantControl(false);
+    }
+  });
+
+  $("#shareClipboard")?.addEventListener("change", (event) => {
+    state.shareClipboard = Boolean(event.currentTarget.checked);
+    updateClipboardButton();
+  });
+
   $("[data-action='capture']").addEventListener("click", startCapture);
   $("[data-action='control']").addEventListener("click", sendControlRequest);
   $("[data-action='approve-control']").addEventListener("click", () => grantControl(true));
