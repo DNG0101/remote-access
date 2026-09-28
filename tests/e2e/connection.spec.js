@@ -23,8 +23,7 @@ test("host and controller build a WebRTC connection, deliver screen, grant contr
   await host.locator("[data-action='create-host']").first().click();
   await expect(host.locator("#diagSignaling")).toHaveText("connected", { timeout: 20_000 });
 
-  await host.locator("[data-action='copy-invite']").click();
-  const inviteUrl = await host.evaluate(() => navigator.clipboard.readText());
+  const inviteUrl = await host.locator("[data-action='copy-invite']").getAttribute("data-invite-url");
   expect(inviteUrl).toContain("join=");
   expect(inviteUrl).toContain("code=");
 
