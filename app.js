@@ -1157,19 +1157,61 @@ async function refreshStats() {
   }
 }
 
+function remoteVideoPoint(event) {
+  const video = event.currentTarget;
+  const rect = video.getBoundingClientRect();
+
+  if (!rect.width || !rect.height) return null;
+
+  let contentLeft = rect.left;
+  let contentTop = rect.top;
+  let contentWidth = rect.width;
+  let contentHeight = rect.height;
+
+  const sourceWidth = Number(video.videoWidth || 0);
+  const sourceHeight = Number(video.videoHeight || 0);
+
+  if (sourceWidth > 0 && sourceHeight > 0) {
+    const sourceAspect = sourceWidth / sourceHeight;
+    const boxAspect = rect.width / rect.height;
+
+    if (boxAspect > sourceAspect) {
+      contentHeight = rect.height;
+      contentWidth = contentHeight * sourceAspect;
+      contentLeft = rect.left + (rect.width - contentWidth) / 2;
+    } else if (boxAspect < sourceAspect) {
+      contentWidth = rect.width;
+      contentHeight = contentWidth / sourceAspect;
+      contentTop = rect.top + (rect.height - contentHeight) / 2;
+    }
+  }
+
+  const x = (event.clientX - contentLeft) / contentWidth;
+  const y = (event.clientY - contentTop) / contentHeight;
+
+  return {
+    x,
+    y,
+    inside: x >= 0 && x <= 1 && y >= 0 && y <= 1
+  };
+}
+
 function handlePointer(event) {
   if (!state.controlGranted || state.role !== "controller" || !state.session?.pc) return;
   const now = performance.now();
   if (now - state.lastPointerSend < 40) return;
-  const rect = event.currentTarget.getBoundingClientRect();
-  if (!rect.width || !rect.height) return;
+
+  const point = remoteVideoPoint(event);
+  if (!point || !point.inside) return;
+
   const message = {
     type: "mouse_move",
     timestamp: Date.now(),
-    x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)),
-    y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)),
+    x: point.x,
+    y: point.y,
     monitorId: "browser-display"
   };
+
   if (validateInputMessage(message)) state.session.send("input", message);
   state.lastPointerSend = now;
 }
@@ -1481,13 +1523,15 @@ function bindEvents() {
   $("#remoteVideo").addEventListener("pointerdown", (event) => {
     event.currentTarget.focus?.();
     try { event.currentTarget.setPointerCapture?.(event.pointerId); } catch {}
-    const rect = event.currentTarget.getBoundingClientRect();
+    const point = remoteVideoPoint(event);
+    if (!point || !point.inside) return;
+
     sendInput({
       type: "mouse_button",
       button: event.button === 2 ? "right" : event.button === 1 ? "middle" : "left",
       action: "down",
-      x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)),
-      y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)),
+      x: point.x,
+      y: point.y,
       timestamp: Date.now()
     });
   });
@@ -1496,24 +1540,28 @@ function bindEvents() {
   });
   $("#remoteVideo").addEventListener("pointerup", (event) => {
     try { event.currentTarget.releasePointerCapture?.(event.pointerId); } catch {}
-    const rect = event.currentTarget.getBoundingClientRect();
+    const point = remoteVideoPoint(event);
+    if (!point || !point.inside) return;
+
     sendInput({
       type: "mouse_button",
       button: event.button === 2 ? "right" : event.button === 1 ? "middle" : "left",
       action: "up",
-      x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)),
-      y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)),
+      x: point.x,
+      y: point.y,
       timestamp: Date.now()
     });
   });
   $("#remoteVideo").addEventListener("dblclick", (event) => {
-    const rect = event.currentTarget.getBoundingClientRect();
+    const point = remoteVideoPoint(event);
+    if (!point || !point.inside) return;
+
     sendInput({
       type: "mouse_button",
       button: "left",
       action: "double",
-      x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)),
-      y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)),
+      x: point.x,
+      y: point.y,
       timestamp: Date.now()
     });
   });
