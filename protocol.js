@@ -1,19 +1,335 @@
 export const PROTOCOL_VERSION = "1.1.0";
-export const CHANNELS = Object.freeze(["control","input","clipboard","file-transfer","telemetry","chat"]);
-const SIGNAL_TYPES=new Set(["join","join_ack","reject","offer","answer","candidate","leave","error"]);
-const INPUT_TYPES=new Set(["mouse_move","mouse_button","scroll","keyboard"]);
-const CONTROL_TYPES=new Set(["control_request","control_decision","control_revoked","capabilities","clipboard_text"]);
-const MAX_SIGNAL_BYTES=256*1024, MAX_CHANNEL_BYTES=256*1024, MAX_CLIPBOARD_BYTES=100*1024, MAX_PENDING_CANDIDATES=64, MAX_PENDING_MESSAGES=20;
-const byteLength=(v)=>new TextEncoder().encode(v).byteLength;
-const obj=(v)=>Boolean(v&&typeof v==="object"&&!Array.isArray(v));
-export function makePeerId(){if(globalThis.crypto?.randomUUID)return globalThis.crypto.randomUUID();if(!globalThis.crypto?.getRandomValues)throw new Error("Secure random APIs are unavailable.");const b=new Uint8Array(16);globalThis.crypto.getRandomValues(b);return [...b].map(x=>x.toString(16).padStart(2,"0")).join("");}
-export function generateSessionCode(){if(!globalThis.crypto?.getRandomValues)throw new Error("Secure random APIs are unavailable.");const limit=Math.floor(0x100000000/1000000)*1000000,v=new Uint32Array(1);do globalThis.crypto.getRandomValues(v);while(v[0]>=limit);return String(v[0]%1000000).padStart(6,"0");}
-export function normalizeSessionCode(v){return String(v??"").replace(/\D/g,"").slice(0,6);}
-export function isRecentTimestamp(v,maxAgeMs=120000){return Number.isFinite(v)&&Math.abs(Date.now()-v)<=maxAgeMs;}
-const validId=(v)=>typeof v==="string"&&/^[0-9a-f-]{16,64}$/i.test(v), validRole=(v)=>v==="host"||v==="controller";
-export function validateSignalMessage(m){if(!obj(m))return{ok:false,reason:"SIGNAL_NOT_OBJECT"};if(!SIGNAL_TYPES.has(m.type))return{ok:false,reason:"SIGNAL_TYPE_UNSUPPORTED"};if(!/^\d{6}$/.test(m.code))return{ok:false,reason:"SIGNAL_CODE_INVALID"};if(!validRole(m.from))return{ok:false,reason:"SIGNAL_ROLE_INVALID"};if(!validId(m.peerId))return{ok:false,reason:"SIGNAL_PEER_ID_INVALID"};if(m.to!=null&&!validId(m.to))return{ok:false,reason:"SIGNAL_TARGET_INVALID"};if(!isRecentTimestamp(m.at))return{ok:false,reason:"SIGNAL_TIMESTAMP_INVALID"};if(byteLength(JSON.stringify(m))>MAX_SIGNAL_BYTES)return{ok:false,reason:"SIGNAL_TOO_LARGE"};if(m.type==="join"&&!validRole(m.role))return{ok:false,reason:"SIGNAL_JOIN_ROLE_INVALID"};if(m.type==="offer"||m.type==="answer"){if(!obj(m.description)||m.description.type!==m.type||typeof m.description.sdp!=="string"||byteLength(m.description.sdp)>200*1024)return{ok:false,reason:"SIGNAL_DESCRIPTION_INVALID"};}if(m.type==="candidate"){const c=m.candidate;if(!obj(c)||typeof c.candidate!=="string"||byteLength(c.candidate)>16*1024)return{ok:false,reason:"SIGNAL_CANDIDATE_INVALID"};if(c.sdpMid!=null&&typeof c.sdpMid!=="string")return{ok:false,reason:"SIGNAL_SDP_MID_INVALID"};if(c.sdpMLineIndex!=null&&!Number.isInteger(c.sdpMLineIndex))return{ok:false,reason:"SIGNAL_SDP_LINE_INVALID"};}if(m.type==="reject"||m.type==="error"){if(typeof m.codeName!=="string"||m.codeName.length>80)return{ok:false,reason:"SIGNAL_ERROR_CODE_INVALID"};if(m.message!=null&&(typeof m.message!=="string"||m.message.length>500))return{ok:false,reason:"SIGNAL_ERROR_MESSAGE_INVALID"};}return{ok:true};}
-export function validateInputMessage(m){if(!obj(m)||!INPUT_TYPES.has(m.type)||!isRecentTimestamp(m.timestamp,120000))return false;if(m.type==="mouse_move")return Number.isFinite(m.x)&&Number.isFinite(m.y)&&m.x>=0&&m.x<=1&&m.y>=0&&m.y<=1&&typeof m.monitorId==="string"&&m.monitorId.length>0&&m.monitorId.length<=128;if(m.type==="mouse_button")return["left","middle","right"].includes(m.button)&&["down","up","double"].includes(m.action);if(m.type==="scroll")return Number.isFinite(m.deltaX)&&Number.isFinite(m.deltaY)&&Math.abs(m.deltaX)<=10000&&Math.abs(m.deltaY)<=10000;return typeof m.key==="string"&&m.key.length>0&&m.key.length<=64&&typeof m.code==="string"&&m.code.length>0&&m.code.length<=64&&["down","up"].includes(m.action)&&Array.isArray(m.modifiers)&&m.modifiers.length<=4&&m.modifiers.every(x=>["CTRL","ALT","SHIFT","META"].includes(x));}
-export function validateControlMessage(m){if(!obj(m)||!CONTROL_TYPES.has(m.type)||byteLength(JSON.stringify(m))>MAX_CHANNEL_BYTES)return false;if(m.type==="control_request")return typeof m.requestId==="string"&&/^[0-9a-f-]{8,64}$/i.test(m.requestId)&&isRecentTimestamp(m.requestedAt,30000);if(m.type==="control_decision")return typeof m.requestId==="string"&&m.requestId.length<=64&&typeof m.granted==="boolean";if(m.type==="control_revoked")return m.reason==null||(typeof m.reason==="string"&&m.reason.length<=120);if(m.type==="capabilities")return typeof m.controlAllowed==="boolean"&&typeof m.clipboard==="boolean"&&typeof m.screen==="boolean";return typeof m.text==="string"&&byteLength(m.text)<=MAX_CLIPBOARD_BYTES;}
-export function validateDataChannelMessage(channel,message){if(typeof message!=="string"||byteLength(message)>MAX_CHANNEL_BYTES)return false;let m;try{m=JSON.parse(message);}catch{return false;}if(channel==="input")return validateInputMessage(m);if(channel==="control"||channel==="clipboard")return validateControlMessage(m);return obj(m);}
-export function calculateBitrate(previous,current,now=Date.now()){if(!previous||!Number.isFinite(current?.bytes)||now<=previous.at)return null;const delta=current.bytes-previous.bytes;if(delta<0)return null;return Math.round(delta*8/((now-previous.at)/1000)/1000);}
-export {MAX_SIGNAL_BYTES,MAX_CHANNEL_BYTES,MAX_CLIPBOARD_BYTES,MAX_PENDING_CANDIDATES,MAX_PENDING_MESSAGES};
+
+export const CHANNELS = Object.freeze([
+  "control",
+  "input",
+  "clipboard",
+  "file-transfer",
+  "telemetry",
+  "chat"
+]);
+
+const SIGNAL_KINDS = new Set(["offer", "answer", "candidate", "leave", "error"]);
+const INPUT_TYPES = new Set(["mouse_move", "mouse_button", "scroll", "keyboard"]);
+const CONTROL_TYPES = new Set([
+  "control_request",
+  "control_decision",
+  "control_revoked",
+  "capabilities",
+  "clipboard_text"
+]);
+
+const MAX_SIGNAL_BYTES = 256 * 1024;
+const MAX_CHANNEL_BYTES = 256 * 1024;
+const MAX_CLIPBOARD_BYTES = 100 * 1024;
+const MAX_PENDING_CANDIDATES = 64;
+const MAX_PENDING_MESSAGES = 20;
+
+const encoder = new TextEncoder();
+
+const byteLength = (value) => encoder.encode(String(value)).byteLength;
+const isObject = (value) => Boolean(
+  value &&
+  typeof value === "object" &&
+  !Array.isArray(value)
+);
+
+const validPeerId = (value) =>
+  typeof value === "string" &&
+  /^[A-Za-z0-9_-]{8,96}$/.test(value);
+
+const validRole = (value) => value === "host" || value === "controller";
+
+export function makePeerId() {
+  if (globalThis.crypto?.randomUUID) {
+    return globalThis.crypto.randomUUID();
+  }
+  if (!globalThis.crypto?.getRandomValues) {
+    throw new Error("Secure random APIs are unavailable.");
+  }
+
+  const bytes = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(bytes);
+  return [...bytes]
+    .map((value) => value.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+export function generateSessionCode() {
+  if (!globalThis.crypto?.getRandomValues) {
+    throw new Error("Secure random APIs are unavailable.");
+  }
+
+  const upperBound = Math.floor(0x100000000 / 1000000) * 1000000;
+  const value = new Uint32Array(1);
+
+  do {
+    globalThis.crypto.getRandomValues(value);
+  } while (value[0] >= upperBound);
+
+  return String(value[0] % 1000000).padStart(6, "0");
+}
+
+export function normalizeSessionCode(value) {
+  return String(value ?? "").replace(/\D/g, "").slice(0, 6);
+}
+
+export function isRecentTimestamp(value, maxAgeMs = 120000) {
+  return Number.isFinite(value) && Math.abs(Date.now() - value) <= maxAgeMs;
+}
+
+export function validateSignalMessage(message) {
+  if (!isObject(message)) {
+    return { ok: false, reason: "SIGNAL_NOT_OBJECT" };
+  }
+
+  if (
+    typeof message.roomId !== "string" ||
+    !/^\d{6}$/.test(message.roomId)
+  ) {
+    return { ok: false, reason: "SIGNAL_ROOM_INVALID" };
+  }
+
+  if (!validPeerId(message.from)) {
+    return { ok: false, reason: "SIGNAL_PEER_ID_INVALID" };
+  }
+
+  if (message.to != null && !validPeerId(message.to)) {
+    return { ok: false, reason: "SIGNAL_TARGET_INVALID" };
+  }
+
+  if (!Number.isFinite(Number(message.sentAt)) ||
+      !isRecentTimestamp(Number(message.sentAt))) {
+    return { ok: false, reason: "SIGNAL_TIMESTAMP_INVALID" };
+  }
+
+  const isAnnouncement = message.announce === true;
+  if (!isAnnouncement && !SIGNAL_KINDS.has(message.kind)) {
+    return { ok: false, reason: "SIGNAL_KIND_UNSUPPORTED" };
+  }
+
+  if (isAnnouncement) {
+    if (!validRole(message.role)) {
+      return { ok: false, reason: "SIGNAL_ANNOUNCE_ROLE_INVALID" };
+    }
+  }
+
+  if (message.kind === "offer" || message.kind === "answer") {
+    const description = message.description;
+    if (
+      !isObject(description) ||
+      description.type !== message.kind ||
+      typeof description.sdp !== "string" ||
+      !description.sdp.length ||
+      byteLength(description.sdp) > 200 * 1024
+    ) {
+      return { ok: false, reason: "SIGNAL_DESCRIPTION_INVALID" };
+    }
+  }
+
+  if (message.kind === "candidate") {
+    const candidate = message.candidate;
+    if (
+      !isObject(candidate) ||
+      typeof candidate.candidate !== "string" ||
+      byteLength(candidate.candidate) > 16 * 1024
+    ) {
+      return { ok: false, reason: "SIGNAL_CANDIDATE_INVALID" };
+    }
+
+    if (candidate.sdpMid != null && typeof candidate.sdpMid !== "string") {
+      return { ok: false, reason: "SIGNAL_SDP_MID_INVALID" };
+    }
+
+    if (
+      candidate.sdpMLineIndex != null &&
+      !Number.isInteger(candidate.sdpMLineIndex)
+    ) {
+      return { ok: false, reason: "SIGNAL_SDP_LINE_INVALID" };
+    }
+
+    if (
+      candidate.usernameFragment != null &&
+      typeof candidate.usernameFragment !== "string"
+    ) {
+      return { ok: false, reason: "SIGNAL_USERNAME_FRAGMENT_INVALID" };
+    }
+  }
+
+  if (message.kind === "error") {
+    if (
+      typeof message.codeName !== "string" ||
+      message.codeName.length < 1 ||
+      message.codeName.length > 80
+    ) {
+      return { ok: false, reason: "SIGNAL_ERROR_CODE_INVALID" };
+    }
+
+    if (
+      message.message != null &&
+      (typeof message.message !== "string" || message.message.length > 500)
+    ) {
+      return { ok: false, reason: "SIGNAL_ERROR_MESSAGE_INVALID" };
+    }
+  }
+
+  if (byteLength(JSON.stringify(message)) > MAX_SIGNAL_BYTES) {
+    return { ok: false, reason: "SIGNAL_TOO_LARGE" };
+  }
+
+  return { ok: true };
+}
+
+export function validateInputMessage(message) {
+  if (
+    !isObject(message) ||
+    !INPUT_TYPES.has(message.type) ||
+    !isRecentTimestamp(message.timestamp, 120000)
+  ) {
+    return false;
+  }
+
+  if (message.type === "mouse_move") {
+    return (
+      Number.isFinite(message.x) &&
+      Number.isFinite(message.y) &&
+      message.x >= 0 &&
+      message.x <= 1 &&
+      message.y >= 0 &&
+      message.y <= 1 &&
+      typeof message.monitorId === "string" &&
+      message.monitorId.length > 0 &&
+      message.monitorId.length <= 128
+    );
+  }
+
+  if (message.type === "mouse_button") {
+    return (
+      ["left", "middle", "right"].includes(message.button) &&
+      ["down", "up", "double"].includes(message.action)
+    );
+  }
+
+  if (message.type === "scroll") {
+    return (
+      Number.isFinite(message.deltaX) &&
+      Number.isFinite(message.deltaY) &&
+      Math.abs(message.deltaX) <= 10000 &&
+      Math.abs(message.deltaY) <= 10000
+    );
+  }
+
+  return (
+    typeof message.key === "string" &&
+    message.key.length > 0 &&
+    message.key.length <= 64 &&
+    typeof message.code === "string" &&
+    message.code.length > 0 &&
+    message.code.length <= 64 &&
+    ["down", "up"].includes(message.action) &&
+    Array.isArray(message.modifiers) &&
+    message.modifiers.length <= 4 &&
+    message.modifiers.every((value) =>
+      ["CTRL", "ALT", "SHIFT", "META"].includes(value)
+    )
+  );
+}
+
+export function validateControlMessage(message) {
+  if (
+    !isObject(message) ||
+    !CONTROL_TYPES.has(message.type) ||
+    byteLength(JSON.stringify(message)) > MAX_CHANNEL_BYTES
+  ) {
+    return false;
+  }
+
+  if (message.type === "control_request") {
+    return (
+      typeof message.requestId === "string" &&
+      /^[A-Za-z0-9_-]{8,64}$/.test(message.requestId) &&
+      isRecentTimestamp(message.requestedAt, 30000)
+    );
+  }
+
+  if (message.type === "control_decision") {
+    return (
+      typeof message.requestId === "string" &&
+      /^[A-Za-z0-9_-]{8,64}$/.test(message.requestId) &&
+      typeof message.granted === "boolean"
+    );
+  }
+
+  if (message.type === "control_revoked") {
+    return (
+      message.reason == null ||
+      (typeof message.reason === "string" && message.reason.length <= 120)
+    );
+  }
+
+  if (message.type === "capabilities") {
+    return (
+      typeof message.controlAllowed === "boolean" &&
+      typeof message.clipboard === "boolean" &&
+      typeof message.screen === "boolean"
+    );
+  }
+
+  return (
+    typeof message.text === "string" &&
+    byteLength(message.text) <= MAX_CLIPBOARD_BYTES
+  );
+}
+
+export function validateDataChannelMessage(channel, message) {
+  if (
+    typeof message !== "string" ||
+    byteLength(message) > MAX_CHANNEL_BYTES
+  ) {
+    return false;
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(message);
+  } catch {
+    return false;
+  }
+
+  if (channel === "input") {
+    return validateInputMessage(parsed);
+  }
+
+  if (channel === "control" || channel === "clipboard") {
+    return validateControlMessage(parsed);
+  }
+
+  return isObject(parsed);
+}
+
+export function calculateBitrate(previous, current, at = Date.now()) {
+  if (
+    !previous ||
+    !Number.isFinite(current?.bytes) ||
+    !Number.isFinite(previous.bytes) ||
+    !Number.isFinite(previous.at) ||
+    at <= previous.at
+  ) {
+    return null;
+  }
+
+  const delta = current.bytes - previous.bytes;
+  if (delta < 0) return null;
+
+  return Math.round(
+    (delta * 8) / ((at - previous.at) / 1000) / 1000
+  );
+}
+
+export {
+  MAX_SIGNAL_BYTES,
+  MAX_CHANNEL_BYTES,
+  MAX_CLIPBOARD_BYTES,
+  MAX_PENDING_CANDIDATES,
+  MAX_PENDING_MESSAGES
+};
