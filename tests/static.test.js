@@ -26,11 +26,11 @@ test("host establishes WebRTC before optional control consent", () => {
   assert.match(rtc, /kind: "candidate"/);
   assert.match(rtc, /await this\.ensurePeerConnection\(true\)/);
   assert.match(rtc, /connectionstatechange/);
-  assert.match(rtc, /connectionState/);
+  assert.match(rtc, /connectionState/);\n  assert.match(rtc, /pendingMessages = new Map/);\n  assert.match(rtc, /kind: "leave"/);
 });
 
 test("public client is configured for a WSS signaling endpoint", () => {
   const config = read("config.js");
   assert.match(config, /wss:\/\//);
-  assert.match(config, /signalingUrl/);
+  assert.match(config, /signalingUrl/);\n  assert.match(config, /appVersion: "0\\.3\\.2"/);
 });
