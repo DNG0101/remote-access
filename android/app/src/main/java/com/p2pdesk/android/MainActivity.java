@@ -24,13 +24,11 @@ public class MainActivity extends Activity {
     private static final int REQUEST_SAVE = 8301;
     private static final int REQUEST_OPEN_FILE = 8302;
     private static final int REQUEST_MICROPHONE = 8303;
-    private static final int REQUEST_MICROPHONE = 8303;
 
     private EditText codeInput;
     private EditText signalingInput;
     private CheckBox controlCheckbox;
     private CheckBox clipboardCheckbox;
-    private CheckBox microphoneCheckbox;
     private CheckBox microphoneCheckbox;
     private TextView statusText;
     private TextView accessText;
