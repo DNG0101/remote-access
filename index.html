@@ -141,7 +141,17 @@
     </main>
     <div class="toast-stack" id="toastStack" aria-live="polite"></div>
     <script src="config.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.5/peerjs.min.js" crossorigin="anonymous"></script>
+    <script>
+      if (!window.Peer) {
+        document.write('<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js"><\\/script>');
+      }
+    </script>
+    <script>
+      if (!window.Peer) {
+        document.write('<script src="https://unpkg.com/peerjs@1.5.5/dist/peerjs.min.js"><\\/script>');
+      }
+    </script>
     <script type="module" src="app.js"></script>
   </body>
 </html>
