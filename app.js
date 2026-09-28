@@ -34,7 +34,8 @@ const state = {
   incomingClipboard: null,
   completedFile: null,
   nativeAgent: null,
-  nativeAgentWarned: false
+  nativeAgentWarned: false,
+  peerDeviceInfo: null
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -139,6 +140,7 @@ function resetModules() {
   state.incomingFile = null;
   state.outgoingFile = null;
   state.peerCapabilities = null;
+  state.peerDeviceInfo = null;
   state.incomingClipboard = null;
   if (state.completedFile?.url) {
     URL.revokeObjectURL(state.completedFile.url);
@@ -150,6 +152,7 @@ function resetModules() {
   setModuleStatus("chatStatus", "OFFLINE");
   setModuleStatus("fileStatus", "READY");
   setModuleStatus("nativeStatus", "OFFLINE");
+  $("#androidControls")?.classList.add("hidden");
   if ($("#nativeMessage")) {
     $("#nativeMessage").textContent =
       "Optional local agent for real PC mouse and keyboard control. The browser remains the consent boundary.";
@@ -873,6 +876,24 @@ function wireSession(session) {
         state.peerCapabilities = message;
         setModuleStatus("chatStatus", message.chat ? "ONLINE" : "LIMITED", message.chat ? "green" : "amber");
         setModuleStatus("fileStatus", message.fileTransfer ? "READY" : "UNSUPPORTED", message.fileTransfer ? "green" : "amber");
+        updateAndroidControls();
+
+        if (message.androidHost) {
+          setModuleStatus("nativeStatus", "ANDROID READY", "green");
+          if ($("#nativeMessage")) {
+            $("#nativeMessage").textContent = "Android native host is connected. PC touch, drag, system actions, text entry, clipboard and file modules are available according to phone permissions.";
+          }
+        }
+      }
+
+      if (message.type === "device_info") {
+        state.peerDeviceInfo = message;
+        logEvent("remote_device_info", {
+          model: String(message.manufacturer || "") + " " + String(message.model || ""),
+          sdk: message.sdk,
+          resolution: String(message.width || "") + "x" + String(message.height || ""),
+          battery: message.battery
+        });
       }
       return;
     }
@@ -1216,6 +1237,27 @@ function handlePointer(event) {
   state.lastPointerSend = now;
 }
 
+function updateAndroidControls() {
+  const controls = $("#androidControls");
+  if (!controls) return;
+  controls.classList.toggle("hidden", !state.peerCapabilities?.androidHost);
+}
+
+function sendAndroidAction(action) {
+  if (!state.peerCapabilities?.androidHost) {
+    toast("The connected peer is not advertising Android host controls.", "info");
+    return;
+  }
+
+  if (!sendInput({
+    type: "android_action",
+    action,
+    timestamp: Date.now()
+  })) {
+    toast("The Android command could not be sent.", "error");
+  }
+}
+
 function sendInput(message) {
   if (
     state.role !== "controller" ||
@@ -1393,6 +1435,27 @@ function bindEvents() {
   });
 
   $("[data-action='mobile-keyboard']").addEventListener("click", openMobileKeyboard);
+  $("[data-android-action]").forEach((button) => {
+    button.addEventListener("click", () => sendAndroidAction(button.dataset.androidAction));
+  });
+
+  $("[data-action='remote-fullscreen']")?.addEventListener("click", async () => {
+    try {
+      await $("#remoteVideo").requestFullscreen();
+    } catch {
+      toast("Fullscreen is not available in this browser.", "info");
+    }
+  });
+
+  $("[data-action='remote-mute']")?.addEventListener("click", (event) => {
+    const video = $("#remoteVideo");
+    video.muted = !video.muted;
+    event.currentTarget.textContent = video.muted ? "Unmute" : "Mute";
+  });
+
+  $("#remoteVolume")?.addEventListener("input", (event) => {
+    $("#remoteVideo").volume = Number(event.currentTarget.value);
+  });
   $("[data-action='close-keyboard']").addEventListener("click", closeMobileKeyboard);
   $("[data-action='send-mobile-text']").addEventListener("click", () => {
     sendMobileText($("#mobileTextInput").value);
@@ -1537,6 +1600,12 @@ function bindEvents() {
   });
   $("#remoteVideo").addEventListener("pointercancel", (event) => {
     try { event.currentTarget.releasePointerCapture?.(event.pointerId); } catch {}
+    sendInput({
+      type: "mouse_button",
+      button: event.button === 2 ? "right" : event.button === 1 ? "middle" : "left",
+      action: "up",
+      timestamp: Date.now()
+    });
   });
   $("#remoteVideo").addEventListener("pointerup", (event) => {
     try { event.currentTarget.releasePointerCapture?.(event.pointerId); } catch {}
@@ -1568,29 +1637,79 @@ function bindEvents() {
   $("#remoteVideo").addEventListener("contextmenu", (event) => event.preventDefault());
   $("#remoteVideo").addEventListener("wheel", (event) => {
     event.preventDefault();
-    sendInput({ type: "scroll", deltaX: event.deltaX, deltaY: event.deltaY, timestamp: Date.now() });
+    const point = remoteVideoPoint(event);
+    if (!point || !point.inside) return;
+
+    sendInput({
+      type: "scroll",
+      deltaX: event.deltaX,
+      deltaY: event.deltaY,
+      x: point.x,
+      y: point.y,
+      timestamp: Date.now()
+    });
   }, { passive: false });
   $("#remoteVideo").addEventListener("keydown", (event) => {
     if (state.role !== "controller" || !state.controlGranted) return;
     event.preventDefault();
+
+    const modifiers = modifierNames(event);
+    const android = Boolean(state.peerCapabilities?.androidHost);
+
+    if (
+      android &&
+      !event.isComposing &&
+      modifiers.length === 0 &&
+      event.key.length === 1
+    ) {
+      sendInput({
+        type: "text_input",
+        text: event.key,
+        timestamp: Date.now()
+      });
+      return;
+    }
+
+    if (android && modifiers.length === 0 && event.key === "Enter") {
+      sendInput({
+        type: "text_input",
+        text: "\n",
+        timestamp: Date.now()
+      });
+      return;
+    }
+
     sendInput({
       type: "keyboard",
       key: event.key,
       code: event.code,
       action: "down",
-      modifiers: modifierNames(event),
+      modifiers,
       timestamp: Date.now()
     });
   });
   $("#remoteVideo").addEventListener("keyup", (event) => {
     if (state.role !== "controller" || !state.controlGranted) return;
     event.preventDefault();
+
+    const modifiers = modifierNames(event);
+    const android = Boolean(state.peerCapabilities?.androidHost);
+
+    if (
+      android &&
+      !event.isComposing &&
+      modifiers.length === 0 &&
+      (event.key.length === 1 || event.key === "Enter")
+    ) {
+      return;
+    }
+
     sendInput({
       type: "keyboard",
       key: event.key,
       code: event.code,
       action: "up",
-      modifiers: modifierNames(event),
+      modifiers,
       timestamp: Date.now()
     });
   });
