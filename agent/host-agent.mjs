@@ -127,17 +127,27 @@ class WindowsInputBridge {
 
 const windows = new WindowsInputBridge();
 const windowsReady = windows.start();
+const linuxReadyPromise = process.platform === "linux"
+  ? commandExists("xdotool")
+  : Promise.resolve(false);
 
 async function linuxInput(message) {
   if (!(await commandExists("xdotool"))) return false;
 
   if (message.type === "mouse_move") {
-    const width = 1920;
-    const height = 1080;
+    const geometry = await execFileAsync("xdotool", [
+      "getdisplaygeometry"
+    ]);
+    const [width, height] = geometry.stdout.trim().split(/\s+/).map(Number);
+
+    if (!Number.isFinite(width) || !Number.isFinite(height)) {
+      return false;
+    }
+
     await execFileAsync("xdotool", [
       "mousemove",
-      String(Math.round(message.x * width)),
-      String(Math.round(message.y * height))
+      String(Math.max(0, Math.min(width - 1, Math.round(message.x * width)))),
+      String(Math.max(0, Math.min(height - 1, Math.round(message.y * height))))
     ]);
     return true;
   }
@@ -202,11 +212,20 @@ async function executeInput(message) {
   return false;
 }
 
-function capabilities() {
+async function capabilities() {
   if (process.platform === "win32") {
     return {
       nativeInput: windowsReady && windows.ready,
-      clipboard: true,
+      clipboard: false,
+      files: false,
+      monitors: true
+    };
+  }
+
+  if (process.platform === "linux") {
+    return {
+      nativeInput: await linuxReadyPromise,
+      clipboard: false,
       files: false,
       monitors: true
     };
@@ -263,12 +282,13 @@ wss.on("connection", (ws, req) => {
       }
 
       authenticated = true;
+      const agentCapabilities = await capabilities();
       send(ws, {
         type: "hello_ack",
-        nativeInput: capabilities().nativeInput,
-        clipboard: capabilities().clipboard,
-        files: capabilities().files,
-        monitors: capabilities().monitors
+        nativeInput: agentCapabilities.nativeInput,
+        clipboard: agentCapabilities.clipboard,
+        files: agentCapabilities.files,
+        monitors: agentCapabilities.monitors
       });
       return;
     }
