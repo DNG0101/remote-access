@@ -284,3 +284,45 @@ test("mobile text-input events validate and route through the input channel", ()
     false
   );
 });
+
+
+test("Android remote-desktop input modules validate", () => {
+  assert.equal(
+    validateInputMessage({
+      type: "android_action",
+      action: "home",
+      timestamp: Date.now()
+    }),
+    true
+  );
+  assert.equal(
+    validateInputMessage({
+      type: "android_action",
+      action: "not-real",
+      timestamp: Date.now()
+    }),
+    false
+  );
+  assert.equal(
+    validateInputMessage({
+      type: "scroll",
+      deltaX: 0,
+      deltaY: 500,
+      x: 0.72,
+      y: 0.38,
+      timestamp: Date.now()
+    }),
+    true
+  );
+  assert.equal(
+    validateInputMessage({
+      type: "mouse_button",
+      button: "left",
+      action: "down",
+      x: 1.2,
+      y: 0.4,
+      timestamp: Date.now()
+    }),
+    false
+  );
+});

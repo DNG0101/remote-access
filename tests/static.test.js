@@ -62,3 +62,19 @@ test("native agent bridge is included in the browser build", () => {
   assert.match(agent, /127\.0\.0\.1/);
   assert.match(agent, /validateInputMessage/);
 });
+
+
+test("Android host source contains real native control modules", () => {
+  const accessibility = read("android/app/src/main/java/com/p2pdesk/android/RemoteAccessibilityService.java");
+  const host = read("android/app/src/main/java/com/p2pdesk/android/HostService.java");
+  const rtc = read("android/app/src/main/java/com/p2pdesk/android/WebRtcHost.java");
+  const html = read("index.html");
+
+  assert.match(accessibility, /beginDrag/);
+  assert.match(accessibility, /ACTION_SET_SELECTION/);
+  assert.match(accessibility, /GLOBAL_ACTION_LOCK_SCREEN/);
+  assert.match(host, /sendFileToPeer/);
+  assert.match(host, /handleChat/);
+  assert.match(rtc, /androidHost/);
+  assert.match(html, /data-android-action="back"/);
+});
