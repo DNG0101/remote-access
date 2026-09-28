@@ -35,7 +35,9 @@ const state = {
   completedFile: null,
   nativeAgent: null,
   nativeAgentWarned: false,
-  peerDeviceInfo: null
+  peerDeviceInfo: null,
+  remoteRecorder: null,
+  remoteRecordingParts: []
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -877,6 +879,7 @@ function wireSession(session) {
         setModuleStatus("chatStatus", message.chat ? "ONLINE" : "LIMITED", message.chat ? "green" : "amber");
         setModuleStatus("fileStatus", message.fileTransfer ? "READY" : "UNSUPPORTED", message.fileTransfer ? "green" : "amber");
         updateAndroidControls();
+        renderRemoteDeviceInfo();
 
         if (message.androidHost) {
           setModuleStatus("nativeStatus", "ANDROID READY", "green");
@@ -888,6 +891,7 @@ function wireSession(session) {
 
       if (message.type === "device_info") {
         state.peerDeviceInfo = message;
+        renderRemoteDeviceInfo();
         logEvent("remote_device_info", {
           model: String(message.manufacturer || "") + " " + String(message.model || ""),
           sdk: message.sdk,
@@ -1243,6 +1247,146 @@ function updateAndroidControls() {
   controls.classList.toggle("hidden", !state.peerCapabilities?.androidHost);
 }
 
+function renderRemoteDeviceInfo() {
+  const details = $("#remoteDeviceDetails");
+  if (!details) return;
+
+  const info = state.peerDeviceInfo;
+  const caps = state.peerCapabilities;
+
+  if (!info && !caps) {
+    details.textContent = "No remote device information received yet.";
+    return;
+  }
+
+  const device = info
+    ? `${info.manufacturer || ""} ${info.model || ""}`.trim()
+    : (caps?.androidHost ? "Android device" : "Remote device");
+
+  const parts = [
+    device || "Remote device",
+    info?.sdk ? `Android SDK ${info.sdk}` : "",
+    info?.width && info?.height ? `${info.width}×${info.height}` : "",
+    info?.battery != null ? `Battery ${Math.round(info.battery)}%` : "",
+    caps?.touchGestures ? "Touch/drag" : "",
+    caps?.deviceActions ? "System controls" : "",
+    caps?.fileTransfer ? "Files" : "",
+    caps?.clipboard ? "Clipboard" : "",
+    caps?.chat ? "Chat" : ""
+  ].filter(Boolean);
+
+  details.textContent = parts.join(" · ");
+}
+
+function captureRemoteScreenshot() {
+  const video = $("#remoteVideo");
+  if (!video?.videoWidth || !video?.videoHeight) {
+    toast("Remote screen is not ready for a screenshot.", "info");
+    return;
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+
+  const context = canvas.getContext("2d");
+  if (!context) {
+    toast("Screenshot capture is unavailable in this browser.", "error");
+    return;
+  }
+
+  context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+  canvas.toBlob((blob) => {
+    if (!blob) {
+      toast("Could not create the screenshot.", "error");
+      return;
+    }
+
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `p2p-desk-${new Date().toISOString().replace(/[:.]/g, "-")}.png`;
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast("Remote screenshot saved.", "success");
+  }, "image/png");
+}
+
+function toggleRemoteRecording() {
+  const video = $("#remoteVideo");
+  const button = $("[data-action='record-remote']");
+
+  if (state.remoteRecorder && state.remoteRecorder.state !== "inactive") {
+    state.remoteRecorder.stop();
+    if (button) button.textContent = "Record";
+    return;
+  }
+
+  const stream = video?.srcObject;
+  if (!stream || typeof MediaRecorder === "undefined") {
+    toast("Session recording is not supported in this browser.", "info");
+    return;
+  }
+
+  state.remoteRecordingParts = [];
+
+  let mimeType = "";
+  if (MediaRecorder.isTypeSupported?.("video/webm;codecs=vp9,opus")) {
+    mimeType = "video/webm;codecs=vp9,opus";
+  } else if (MediaRecorder.isTypeSupported?.("video/webm")) {
+    mimeType = "video/webm";
+  }
+
+  try {
+    state.remoteRecorder = new MediaRecorder(
+      stream,
+      mimeType ? { mimeType } : undefined
+    );
+  } catch (error) {
+    state.remoteRecorder = null;
+    toast(`Recording could not start: ${error.message}`, "error");
+    return;
+  }
+
+  state.remoteRecorder.ondataavailable = (event) => {
+    if (event.data?.size) state.remoteRecordingParts.push(event.data);
+  };
+
+  state.remoteRecorder.onstop = () => {
+    const blob = new Blob(
+      state.remoteRecordingParts,
+      { type: mimeType || "video/webm" }
+    );
+
+    state.remoteRecordingParts = [];
+
+    if (!blob.size) {
+      toast("The recording was empty.", "error");
+      return;
+    }
+
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `p2p-desk-session-${new Date().toISOString().replace(/[:.]/g, "-")}.webm`;
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast("Remote session recording saved.", "success");
+  };
+
+  state.remoteRecorder.onerror = () => {
+    state.remoteRecorder = null;
+    state.remoteRecordingParts = [];
+    if (button) button.textContent = "Record";
+    toast("Remote session recording failed.", "error");
+  };
+
+  state.remoteRecorder.start(1000);
+  if (button) button.textContent = "Stop recording";
+  toast("Remote session recording started.", "success");
+}
+
 function sendAndroidAction(action) {
   if (!state.peerCapabilities?.androidHost) {
     toast("The connected peer is not advertising Android host controls.", "info");
@@ -1446,6 +1590,9 @@ function bindEvents() {
       toast("Fullscreen is not available in this browser.", "info");
     }
   });
+
+  $("[data-action='screenshot-remote']")?.addEventListener("click", captureRemoteScreenshot);
+  $("[data-action='record-remote']")?.addEventListener("click", toggleRemoteRecording);
 
   $("[data-action='remote-mute']")?.addEventListener("click", (event) => {
     const video = $("#remoteVideo");

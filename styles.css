@@ -51,3 +51,5 @@
 .remote-device-details{margin-top:12px;padding:10px;border-top:1px solid var(--line);font:10px "DM Mono";color:var(--muted);line-height:1.6}
 .remote-device-details strong{color:var(--ink)}
 @media(max-width:520px){.remote-media-controls{flex-wrap:wrap}.remote-media-hint{flex-basis:100%}.device-controls .tool-button{flex:1 0 auto}}
+
+.remote-media-controls{align-items:center}
