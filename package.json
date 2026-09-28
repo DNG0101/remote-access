@@ -1,1 +1,19 @@
-{"name":"p2p-desk","private":true,"version":"0.2.0","type":"module","scripts":{"test":"node --test","test:protocol":"node --test tests/protocol.test.js","start:signaling":"node server/signaling.js","check":"node --check app.js && node --check webrtc.js && node --check protocol.js && node --check server/signaling.js"},"dependencies":{"ws":"^8.18.0"}}
+{
+  "name": "p2p-desk",
+  "private": true,
+  "version": "0.2.0",
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "test:protocol": "node --test tests/protocol.test.js",
+    "start:signaling": "node server/signaling.js",
+    "check": "node --check app.js && node --check webrtc.js && node --check protocol.js && node --check server/signaling.js",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0"
+  }
+}
