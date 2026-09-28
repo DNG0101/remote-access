@@ -103,7 +103,7 @@ test("two browser pages connect by code, deliver screen, grant/revoke control, a
   await host.locator("[data-action='capture']").click();
   await expect
     .poll(
-      () => controller.locator("#remoteVideo").evaluate((video) => Boolean(video.srcObject?.getVideoTracks?.some((track) => track.readyState === "live"))),
+      () => controller.locator("#remoteVideo").evaluate((video) => Boolean(video.srcObject?.getVideoTracks?.().some((track) => track.readyState === "live"))),
       { timeout: 15_000 }
     )
     .toBe(true);
