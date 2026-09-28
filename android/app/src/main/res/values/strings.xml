@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">P2P Desk Mobile Host</string>
+    <string name="screen_capture_channel">P2P Desk remote session</string>
+    <string name="screen_capture_notification">Remote control session is active</string>
+    <string name="accessibility_description">Lets P2P Desk perform remote taps, swipes, scrolling, navigation, and text entry after the device owner explicitly enables the accessibility service.</string>
+</resources>
