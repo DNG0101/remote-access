@@ -172,6 +172,11 @@ test("two browser pages connect by code, deliver screen, grant/revoke control, a
     clientY: 180,
     button: 0
   });
+  await controller.locator("#remoteVideo").dispatchEvent("pointerup", {
+    clientX: 320,
+    clientY: 180,
+    button: 0
+  });
   await expect.poll(async () => {
     const response = await host.evaluate(() => fetch("/agent-events").then((r) => r.json()));
     return response.inputs.some((packet) =>
