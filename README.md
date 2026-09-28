@@ -83,3 +83,8 @@ Native components must authenticate to the session, enforce the same protocol va
 ## Security baseline
 
 View-only is the default. Control requires an explicit host decision. File offers require recipient approval. Clipboard transfer is user initiated. Session identifiers expire, signaling input is validated, data messages have size/freshness limits, and the signaling service is not used as a screen/data proxy.
+
+
+## PC → Android
+
+The repository includes a native Android host under android/. A PC browser can connect to the phone using the same six-digit room flow. The phone owner must approve Android screen capture and enable the P2P Desk AccessibilityService before remote control can operate.

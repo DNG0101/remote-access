@@ -167,11 +167,18 @@ test("two browser pages connect by code, deliver screen, grant/revoke control, a
     clientX: 320,
     clientY: 180
   });
+  await controller.locator("#remoteVideo").dispatchEvent("pointerdown", {
+    clientX: 320,
+    clientY: 180,
+    button: 0
+  });
   await expect.poll(async () => {
     const response = await host.evaluate(() => fetch("/agent-events").then((r) => r.json()));
     return response.inputs.some((packet) =>
       packet?.type === "mouse_button" &&
-      packet?.action === "down"
+      packet?.action === "down" &&
+      Number.isFinite(packet?.x) &&
+      Number.isFinite(packet?.y)
     );
   }).toBe(true);
 
