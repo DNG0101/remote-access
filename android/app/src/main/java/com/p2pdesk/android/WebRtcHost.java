@@ -26,6 +26,7 @@ import org.webrtc.VideoTrack;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -62,6 +63,9 @@ public final class WebRtcHost {
     private ScreenCapturerAndroid screenCapturer;
     private PeerConnection peerConnection;
     private String remotePeerId;
+    private boolean remoteDescriptionSet;
+    private final List<IceCandidate> pendingRemoteCandidates =
+        new ArrayList<>();
     private final Map<String, DataChannel> channels =
         new HashMap<>();
     private boolean started;
@@ -151,11 +155,23 @@ public final class WebRtcHost {
         Point size = new Point();
         display.getRealSize(size);
 
-        int width = Math.min(size.x, 1920);
-        int height = Math.min(size.y, 1920);
+        double scale =
+            Math.min(
+                1.0,
+                1920.0 /
+                    Math.max(1, Math.max(size.x, size.y))
+            );
 
-        if ((width & 1) == 1) width--;
-        if ((height & 1) == 1) height--;
+        int width =
+            Math.max(
+                2,
+                ((int) Math.round(size.x * scale)) & ~1
+            );
+        int height =
+            Math.max(
+                2,
+                ((int) Math.round(size.y * scale)) & ~1
+            );
 
         videoSource =
             factory.createVideoSource(false);
@@ -713,7 +729,7 @@ public final class WebRtcHost {
                 JSONObject candidate =
                     message.getJSONObject("candidate");
 
-                peerConnection.addIceCandidate(
+                IceCandidate iceCandidate =
                     new IceCandidate(
                         candidate.optString(
                             "sdpMid",
@@ -724,8 +740,13 @@ public final class WebRtcHost {
                             0
                         ),
                         candidate.getString("candidate")
-                    )
-                );
+                    );
+
+                if (!remoteDescriptionSet) {
+                    pendingRemoteCandidates.add(iceCandidate);
+                } else {
+                    peerConnection.addIceCandidate(iceCandidate);
+                }
 
                 return;
             }
@@ -774,6 +795,9 @@ public final class WebRtcHost {
         }
 
         channels.clear();
+        pendingRemoteCandidates.clear();
+        remoteDescriptionSet = false;
+        capabilitiesSent = false;
 
         if (peerConnection != null) {
             peerConnection.close();

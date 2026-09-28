@@ -19,6 +19,9 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import android.os.Handler;
+import android.os.Looper;
+
 public class MainActivity extends Activity {
     private static final int REQUEST_CAPTURE = 8201;
     private static final int REQUEST_SAVE = 8301;
@@ -35,6 +38,15 @@ public class MainActivity extends Activity {
     private TextView chatLog;
     private EditText chatInput;
     private String pendingFilePath = "";
+    private final Handler statusHandler =
+        new Handler(Looper.getMainLooper());
+    private final Runnable statusRefresh = new Runnable() {
+        @Override
+        public void run() {
+            refreshStatus();
+            statusHandler.postDelayed(this, 1000L);
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -56,6 +68,7 @@ public class MainActivity extends Activity {
 
         buildUi();
         refreshStatus();
+        statusHandler.post(statusRefresh);
     }
 
     private void buildUi() {
@@ -271,23 +284,6 @@ public class MainActivity extends Activity {
             view -> saveLastFile()
         );
         root.addView(saveFile);
-
-        Button testChat =
-            new Button(this);
-        testChat.setText(
-            "Send test chat to PC"
-        );
-        testChat.setOnClickListener(view -> {
-            HostService service =
-                HostService.getInstance();
-
-            if (service != null) {
-                service.sendChat(
-                    "Hello from Android host"
-                );
-            }
-        });
-        root.addView(testChat);
 
         statusText = text(
             "Status: OFFLINE",
@@ -553,6 +549,12 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         refreshStatus();
+    }
+
+    @Override
+    protected void onDestroy() {
+        statusHandler.removeCallbacks(statusRefresh);
+        super.onDestroy();
     }
 
     private void refreshStatus() {

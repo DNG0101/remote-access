@@ -478,18 +478,38 @@ public class HostService extends Service
             double dy = message.optDouble("deltaY", 0.0);
 
             if (Math.abs(dx) > Math.abs(dy)) {
+                float amount =
+                    Math.max(
+                        0.08f,
+                        Math.min(
+                            0.65f,
+                            (float) Math.abs(dx) / 700f
+                        )
+                    );
+
                 float endX = clampNorm(
-                    x + (float) (dx > 0 ? -0.30 : 0.30)
+                    x + (float) (dx > 0 ? -amount : amount)
                 );
+
                 success = RemoteAccessibilityService.swipe(
-                    x, y, endX, y, 300L
+                    x, y, endX, y, 280L
                 );
             } else {
+                float amount =
+                    Math.max(
+                        0.08f,
+                        Math.min(
+                            0.65f,
+                            (float) Math.abs(dy) / 700f
+                        )
+                    );
+
                 float endY = clampNorm(
-                    y + (float) (dy > 0 ? -0.30 : 0.30)
+                    y + (float) (dy > 0 ? -amount : amount)
                 );
+
                 success = RemoteAccessibilityService.swipe(
-                    x, y, x, endY, 300L
+                    x, y, x, endY, 280L
                 );
             }
         } else if ("text_input".equals(type)) {
