@@ -57,13 +57,32 @@ function keyCodeMap(code) {
     ["ArrowLeft", "LEFT"],
     ["ArrowRight", "RIGHT"],
     ["Space", "SPACE"],
+    ["ShiftLeft", "SHIFT"],
+    ["ShiftRight", "SHIFT"],
+    ["ControlLeft", "CTRL"],
+    ["ControlRight", "CTRL"],
+    ["AltLeft", "ALT"],
+    ["AltRight", "ALT"],
+    ["MetaLeft", "SUPER"],
+    ["MetaRight", "SUPER"],
+    ["Comma", "comma"],
+    ["Period", "period"],
+    ["Slash", "slash"],
+    ["Semicolon", "semicolon"],
+    ["Quote", "apostrophe"],
+    ["BracketLeft", "bracketleft"],
+    ["BracketRight", "bracketright"],
+    ["Backslash", "backslash"],
+    ["Minus", "minus"],
+    ["Equal", "equal"],
+    ["Backquote", "grave"],
   ]);
 
   if (direct.has(code)) return direct.get(code);
 
-  if (/^Key[A-Z]$/.test(code)) return code.slice(3);
+  if (/^Key[A-Z]$/.test(code)) return code.slice(3).toLowerCase();
   if (/^Digit[0-9]$/.test(code)) return code.slice(5);
-  if (/^Numpad[0-9]$/.test(code)) return "NUM" + code.slice(6);
+  if (/^Numpad[0-9]$/.test(code)) return "KP_" + code.slice(6);
   if (/^F(?:[1-9]|1[0-2])$/.test(code)) return code;
 
   return null;

@@ -38,6 +38,7 @@ test("two browser pages connect by code, deliver screen, grant/revoke control, a
         }
       }
     });
+    window.__setHostClipboard = (value) => { hostClipboard = value; };
   });
 
   await host.goto("/?signal=ws%3A%2F%2F127.0.0.1%3A4174&agent=ws%3A%2F%2F127.0.0.1%3A4175");
@@ -62,9 +63,13 @@ test("two browser pages connect by code, deliver screen, grant/revoke control, a
       configurable: true,
       value: {
         readText: async () => localClipboard,
-        writeText: async (value) => { localClipboard = value; }
+        writeText: async (value) => {
+          localClipboard = value;
+          window.__controllerClipboard = value;
+        }
       }
     });
+    window.__setControllerClipboard = (value) => { localClipboard = value; };
   });
 
   await controller.goto("/?signal=ws%3A%2F%2F127.0.0.1%3A4174#sessions");
@@ -86,6 +91,16 @@ test("two browser pages connect by code, deliver screen, grant/revoke control, a
     .poll(
       () => controller.locator("#remoteVideo").evaluate((video) => Boolean(video.srcObject?.getVideoTracks?.().length)),
       { timeout: 20_000 }
+    )
+    .toBe(true);
+
+  await host.evaluate(() => window.__testCaptureStreams[0].getVideoTracks()[0].stop());
+  await expect(controller.locator("#videoPlaceholder")).toBeVisible({ timeout: 10_000 });
+  await host.locator("[data-action='capture']").click();
+  await expect
+    .poll(
+      () => controller.locator("#remoteVideo").evaluate((video) => Boolean(video.srcObject?.getVideoTracks?.some((track) => track.readyState === "live"))),
+      { timeout: 15_000 }
     )
     .toBe(true);
 
@@ -150,8 +165,11 @@ test("two browser pages connect by code, deliver screen, grant/revoke control, a
   });
   await expect.poll(async () => {
     const response = await host.evaluate(() => fetch("/agent-events").then((r) => r.json()));
-    return response.count;
-  }).toBeGreaterThan(0);
+    return response.inputs.some((packet) =>
+      packet?.type === "mouse_button" &&
+      packet?.action === "down"
+    );
+  }).toBe(true);
 
   await controller.locator("[data-action='mobile-keyboard']").click();
   await expect(controller.locator("#mobileKeyboardPanel")).toBeVisible();
@@ -165,6 +183,14 @@ test("two browser pages connect by code, deliver screen, grant/revoke control, a
     );
   }).toBe(true);
   await controller.locator("[data-action='close-keyboard']").click();
+  await controller.locator("[data-mobile-shortcut='CTRL+C']").click();
+  await expect.poll(async () => {
+    const response = await host.evaluate(() => fetch("/agent-events").then((r) => r.json()));
+    const inputs = response.inputs;
+    return inputs.some((packet) => packet?.type === "keyboard" && packet?.code === "ControlLeft" && packet?.action === "down") &&
+      inputs.some((packet) => packet?.type === "keyboard" && packet?.code === "KeyC" && packet?.action === "down" && packet?.modifiers?.includes("CTRL")) &&
+      inputs.some((packet) => packet?.type === "keyboard" && packet?.code === "ControlLeft" && packet?.action === "up");
+  }).toBe(true);
 
   await host.locator("[data-action='control']").click();
   await expect(controller.locator("#peerSubtext")).toContainText("view-only", { timeout: 10_000 });

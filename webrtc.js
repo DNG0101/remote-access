@@ -954,15 +954,23 @@ export class PeerSession extends EventTarget {
 
     const sender = this.videoSender || this.findSender("video");
 
-    if (sender?.track) {
+    if (sender && this.remotePeerId) {
+      try {
+        this.pc.removeTrack(sender);
+      } catch (error) {
+        await sender.replaceTrack(null);
+        this.log("video_sender_remove_fallback", {
+          reason: error.message
+        });
+      }
+      this.videoSender = null;
+      this.queueNegotiation();
+    } else if (sender?.track) {
       await sender.replaceTrack(null);
+      this.videoSender = null;
     }
 
     this.localStream = null;
-
-    if (sender && this.remotePeerId) {
-      this.queueNegotiation();
-    }
 
     this.emit("message", {
       channel: "system",

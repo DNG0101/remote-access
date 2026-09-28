@@ -1210,26 +1210,42 @@ function sendMobileText(text) {
   $("#mobileTextInput").value = "";
 }
 
-function sendQuickKey(key, code) {
-  if (state.role !== "controller" || !state.controlGranted) return;
-
-  const down = {
+function sendKeyboardPacket(key, code, action, modifiers = []) {
+  return sendInput({
     type: "keyboard",
     key,
     code,
-    action: "down",
-    modifiers: [],
+    action,
+    modifiers,
     timestamp: Date.now()
+  });
+}
+
+function sendQuickKey(key, code) {
+  if (state.role !== "controller" || !state.controlGranted) return;
+  sendKeyboardPacket(key, code, "down");
+  sendKeyboardPacket(key, code, "up");
+}
+
+function sendMobileShortcut(shortcut) {
+  if (state.role !== "controller" || !state.controlGranted) return;
+
+  const shortcuts = {
+    "CTRL+C": [["Control", "ControlLeft"], ["c", "KeyC"]],
+    "CTRL+V": [["Control", "ControlLeft"], ["v", "KeyV"]],
+    "CTRL+A": [["Control", "ControlLeft"], ["a", "KeyA"]],
+    "ALT+TAB": [["Alt", "AltLeft"], ["Tab", "Tab"]],
+    "WIN+D": [["Meta", "MetaLeft"], ["d", "KeyD"]]
   };
 
-  const up = {
-    ...down,
-    action: "up",
-    timestamp: Date.now()
-  };
+  const parts = shortcuts[shortcut];
+  if (!parts) return;
 
-  sendInput(down);
-  sendInput(up);
+  const [modifier, key] = parts;
+  sendKeyboardPacket(modifier[0], modifier[1], "down");
+  sendKeyboardPacket(key[0], key[1], "down", [shortcut.startsWith("CTRL") ? "CTRL" : shortcut.startsWith("ALT") ? "ALT" : "META"]);
+  sendKeyboardPacket(key[0], key[1], "up", [shortcut.startsWith("CTRL") ? "CTRL" : shortcut.startsWith("ALT") ? "ALT" : "META"]);
+  sendKeyboardPacket(modifier[0], modifier[1], "up");
 }
 
 function modifierNames(event) {
@@ -1336,9 +1352,15 @@ function bindEvents() {
       sendMobileText(event.currentTarget.value);
     }
   });
-  $$(".quick-key-row [data-mobile-key]").forEach((button) => {
+  $(".quick-key-row [data-mobile-key]").forEach((button) => {
     button.addEventListener("click", () => {
       sendQuickKey(button.dataset.mobileKey, button.dataset.mobileCode);
+    });
+  });
+
+  $(".mobile-shortcut-row [data-mobile-shortcut]").forEach((button) => {
+    button.addEventListener("click", () => {
+      sendMobileShortcut(button.dataset.mobileShortcut);
     });
   });
 
