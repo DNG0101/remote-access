@@ -219,3 +219,18 @@ test("chat, file, and telemetry modules validate their live message shapes", () 
     true
   );
 });
+
+
+test("zero-byte files are valid transfer offers", () => {
+  assert.equal(
+    validateFileTransferMessage({
+      type: "file_offer",
+      transferId: "empty-file-1",
+      name: "empty.txt",
+      mime: "text/plain",
+      size: 0,
+      totalChunks: 0
+    }),
+    true
+  );
+});
