@@ -234,3 +234,26 @@ test("zero-byte files are valid transfer offers", () => {
     true
   );
 });
+
+
+test("mobile text-input events validate and route through the input channel", () => {
+  const message = {
+    type: "text_input",
+    text: "Hello from Android",
+    timestamp: Date.now()
+  };
+
+  assert.equal(validateInputMessage(message), true);
+  assert.equal(
+    validateDataChannelMessage("input", JSON.stringify(message)),
+    true
+  );
+  assert.equal(
+    validateInputMessage({
+      ...message,
+      text: "x".repeat(5000),
+      timestamp: Date.now()
+    }),
+    false
+  );
+});
