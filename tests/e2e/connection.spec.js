@@ -42,6 +42,31 @@ test("two browser pages connect by code, deliver screen, grant/revoke control, a
   const controller = await context.newPage();
   controller.on("pageerror", (error) => browserErrors.push("controller: " + error.message));
 
+  await controller.addInitScript(() => {
+    let localClipboard = "clipboard from controller";
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        readText: async () => localClipboard,
+        writeText: async (value) => { localClipboard = value; }
+      }
+    });
+  });
+
+  await host.addInitScript(() => {
+    let hostClipboard = "";
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        readText: async () => hostClipboard,
+        writeText: async (value) => {
+          hostClipboard = value;
+          window.__hostClipboard = value;
+        }
+      }
+    });
+  });
+
   await controller.goto("/?signal=ws%3A%2F%2F127.0.0.1%3A4174#sessions");
   await controller.locator("[data-role='controller']").click();
   await controller.locator("#joinCode").fill(code);
@@ -56,6 +81,28 @@ test("two browser pages connect by code, deliver screen, grant/revoke control, a
       { timeout: 20_000 }
     )
     .toBe(true);
+
+  await controller.locator("#chatInput").fill("hello from controller");
+  await controller.locator("[data-action='send-chat']").click();
+  await expect(host.locator("#chatList")).toContainText("hello from controller", { timeout: 10_000 });
+
+  await controller.locator("[data-action='copy-text']").click();
+  await expect.poll(() => host.evaluate(() => window.__hostClipboard || "")).toBe("clipboard from controller");
+
+  await host.locator("#fileInput").setInputFiles({
+    name: "p2p-desk-test.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("P2P DESK FILE TEST")
+  });
+  await expect(controller.locator("#fileOffer")).toBeVisible({ timeout: 10_000 });
+  await expect(controller.locator("#fileOfferName")).toHaveText("p2p-desk-test.txt");
+
+  const downloadPromise = controller.waitForEvent("download");
+  await controller.locator("[data-action='accept-file']").click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe("p2p-desk-test.txt");
+  const downloadedPath = await download.path();
+  expect(downloadedPath).toBeTruthy();
 
   await controller.locator("[data-action='control']").click();
   await expect(host.locator("#consentBanner")).toBeVisible({ timeout: 10_000 });
