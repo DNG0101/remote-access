@@ -344,6 +344,56 @@ export class PeerSession extends EventTarget {
   async handleSignal(message) {
     if (this.closed || !message || typeof message !== "object") return;
 
+    if (
+      message.sys === "roster" &&
+      message.roomId === this.code &&
+      Array.isArray(message.roster)
+    ) {
+      const previousPeerId = this.remotePeerId;
+      const nextPeerId =
+        message.roster.find((peerId) => peerId !== this.peerId) || "";
+
+      if (!nextPeerId) {
+        if (previousPeerId) {
+          this.remotePeerId = "";
+          this.remoteRole = "";
+          this.closePeerConnection();
+          this.emit("message", {
+            channel: "system",
+            data: JSON.stringify({ type: "peer_left" })
+          });
+          this.emit("state", "disconnected");
+        }
+        return;
+      }
+
+      if (
+        previousPeerId &&
+        previousPeerId !== nextPeerId &&
+        this.pc?.connectionState !== "closed"
+      ) {
+        return;
+      }
+
+      if (previousPeerId !== nextPeerId) {
+        this.closePeerConnection();
+        this.remotePeerId = nextPeerId;
+        this.remoteRole =
+          this.role === "host" ? "controller" : "host";
+
+        this.emit("message", {
+          channel: "system",
+          data: JSON.stringify({
+            type: "peer_joined",
+            peerId: nextPeerId
+          })
+        });
+
+        await this.ensurePeerConnection(this.role === "host");
+      }
+      return;
+    }
+
     if (message.server === true && message.kind === "error") {
       this.emit("error", {
         code: message.codeName || "SIGNALING_SERVER_ERROR",
