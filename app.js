@@ -649,9 +649,8 @@ function bindEvents() {
 bindEvents();
 navigate(state.route);
 const inviteParams = new URLSearchParams(location.search);
-const invitePeerId = inviteParams.get("join") || "";
 const inviteCode = normalizeSessionCode(inviteParams.get("code") || "");
-if (invitePeerId && inviteCode.length === 6) {
+if (inviteCode.length === 6) {
   setTimeout(() => {
     navigate("sessions");
     $("[data-role]").forEach((el) => el.classList.toggle("selected", el.dataset.role === "controller"));
