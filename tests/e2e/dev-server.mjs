@@ -47,7 +47,8 @@ const staticServer = http.createServer((req, res) => {
       "cache-control": "no-store"
     });
     res.end(JSON.stringify({
-      count: agentInputs.length
+      count: agentInputs.length,
+      inputs: agentInputs.slice(-10)
     }));
     return;
   }
