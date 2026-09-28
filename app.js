@@ -372,8 +372,9 @@ function completeIncomingFile() {
 
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
+  const safeName = incoming.name.replace(/[\\/:*?"<>|]/g, "_");
   anchor.href = url;
-  anchor.download = incoming.name;
+  anchor.download = safeName || "download";
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
