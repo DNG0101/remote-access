@@ -55,7 +55,13 @@ export class NativeAgentClient extends EventTarget {
       };
 
       try {
-        socket = new WebSocket(this.url);
+        try {
+          socket = new WebSocket(this.url, {
+            targetAddressSpace: "loopback"
+          });
+        } catch {
+          socket = new WebSocket(this.url);
+        }
       } catch (error) {
         this.emit("error", {
           code: "AGENT_CREATE_FAILED",
