@@ -23,6 +23,7 @@ const EVENTS = [
 
 const SIGNAL_CONNECT_TIMEOUT_MS = 12_000;
 const CLOSE_GRACE_MS = 250;
+const PEER_ID_RE = /^[A-Za-z0-9_-]{8,96}$/;
 
 export class PeerSession extends EventTarget {
   constructor({
@@ -351,7 +352,11 @@ export class PeerSession extends EventTarget {
     ) {
       const previousPeerId = this.remotePeerId;
       const nextPeerId =
-        message.roster.find((peerId) => peerId !== this.peerId) || "";
+        message.roster.find(
+          (peerId) =>
+            peerId !== this.peerId &&
+            PEER_ID_RE.test(peerId)
+        ) || "";
 
       if (!nextPeerId) {
         if (previousPeerId) {
