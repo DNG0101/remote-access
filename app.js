@@ -133,7 +133,7 @@ function createSession(role = "host", code = uid(), targetPeerId = "") {
   state.session.connect().then(() => {
     logEvent("session_ready", { role, code: state.code, mode: state.session.signalingMode });
     if (role === "controller" && !state.session.targetPeerId) {
-      toast("Open the host invite link on this device to join.", "info");
+      toast("Connecting to the host session…", "info");
     }
   }).catch((error) => {
     setConnection("failed", "red");
