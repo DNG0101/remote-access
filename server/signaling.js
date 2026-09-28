@@ -227,6 +227,26 @@ export function createSignalingServer({ port = PORT } = {}) {
         return;
       }
 
+      if (message.kind === "leave") {
+        const room = rooms.get(roomId);
+        if (!room) return;
+        for (const other of room.peers.values()) {
+          if (other.id !== peer.id) {
+            send(other.ws, {
+              roomId,
+              from: peer.id,
+              to: other.id,
+              kind: "leave",
+              sentAt: now()
+            });
+          }
+        }
+        room.peers.delete(peer.id);
+        peer = null;
+        if (!room.peers.size) rooms.delete(roomId);
+        return;
+      }
+
       if (!peer ||
           peer.roomId !== roomId ||
           peer.id !== from) {
