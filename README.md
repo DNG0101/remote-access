@@ -21,7 +21,7 @@ This is not yet a production remote desktop product. A browser cannot move the O
 For real cross-device sessions, deploy:
 
 1. This static client on GitHub Pages.
-2. A TLS WebSocket signaling service that exchanges only SDP, ICE candidates, and session metadata.
+2. The built-in PeerJS Cloud broker for browser session discovery/signaling, or an optional self-hosted PeerServer when you need your own signaling boundary.
 3. A TURN service with short-lived credentials for restrictive networks.
 4. A visible, user-installed native host agent for Windows first. The agent must implement capture, OS input, permissions, clipboard, files, monitor metadata, and an emergency stop.
 
@@ -71,7 +71,7 @@ The included client sends a small JSON message shape:
 { "type": "candidate", "candidate": { "...": "..." } }
 ```
 
-The signaling service must authenticate and authorize sessions, expire codes, rate-limit joins, limit peers, validate message size and shape, and never proxy screen or input traffic. See `docs/architecture.md`, `docs/protocol.md`, and `docs/security.md`.
+PeerJS Cloud is suitable for the prototype broker path; a production self-hosted broker still needs authentication, authorization, session expiration, rate limits, peer limits, message validation, and should never proxy screen or input traffic. See `docs/architecture.md`, `docs/protocol.md`, and `docs/security.md`.
 
 ## Project status
 
@@ -82,12 +82,12 @@ The signaling service must authenticate and authorize sessions, expire codes, ra
 | Browser screen capture | Included |
 | Consent and view-only default | Included |
 | Diagnostics | Included |
-| Production signaling | Interface/config included; service not included |
+| Public signaling/brokering | PeerJS Cloud enabled; optional self-hosted PeerServer/custom signaling supported |
 | TURN fallback | Configuration hook included; credentials/service required |
 | Windows OS control | Not included; requires native agent |
 | macOS/Linux agents | Not included |
 | Android native client/host | Not included |
-| 100+ production E2E suite | Checklist and strategy included; not claimed as passed |
+| Browser E2E suite | Playwright coverage added for browser connection/media/control lifecycle |
 
 ## Safety
 
