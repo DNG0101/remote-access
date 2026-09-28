@@ -7,7 +7,7 @@ const read = (path) => fs.readFileSync(new URL("../" + path, import.meta.url), "
 test("GitHub Pages loads the application without third-party runtime dependencies", () => {
   const html = read("index.html");
   assert.doesNotMatch(html, /peerjs/i);
-  assert.match(html, /type="module" src="app\.js"/);
+  assert.match(html, /type="module" src="app\.js(?:\?[^"]*)?"/);
   assert.match(html, /data-action="copy-invite"/);
 });
 
