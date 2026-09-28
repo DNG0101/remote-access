@@ -89,3 +89,53 @@ test("PeerSession can queue a data-channel message before the channel opens", ()
     }
   }
 });
+
+
+test("PeerSession discovers a peer from roster-style signaling", async () => {
+  const previousMediaStream = globalThis.MediaStream;
+
+  globalThis.MediaStream = class {
+    constructor() {
+      this.tracks = [];
+    }
+    getTracks() {
+      return this.tracks;
+    }
+    addTrack(track) {
+      this.tracks.push(track);
+    }
+  };
+
+  try {
+    const session = new PeerSession({
+      code: "123456",
+      role: "controller",
+      signalingUrl: "ws://127.0.0.1:8787"
+    });
+
+    let joinedPeer = "";
+    session.on("message", ({ channel, data }) => {
+      if (channel === "system" && data.type === "peer_joined") {
+        joinedPeer = data.peerId;
+      }
+    });
+
+    await session.handleSignal({
+      sys: "roster",
+      roomId: "123456",
+      roster: [session.peerId, "host-peer_1"],
+    });
+
+    assert.equal(joinedPeer, "host-peer_1");
+    assert.equal(session.remotePeerId, "host-peer_1");
+    assert.equal(session.remoteRole, "host");
+
+    session.closePeerConnection();
+  } finally {
+    if (previousMediaStream === undefined) {
+      delete globalThis.MediaStream;
+    } else {
+      globalThis.MediaStream = previousMediaStream;
+    }
+  }
+});
