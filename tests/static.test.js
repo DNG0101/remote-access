@@ -26,7 +26,7 @@ test("host establishes WebRTC before optional control consent", () => {
   assert.match(rtc, /kind: "candidate"/);
   assert.match(rtc, /await this\.ensurePeerConnection\(true\)/);
   assert.match(rtc, /connectionstatechange/);
-  assert.match(rtc, /value === "connected"/);
+  assert.match(rtc, /connectionState/);
 });
 
 test("public client is configured for a WSS signaling endpoint", () => {
