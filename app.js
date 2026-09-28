@@ -29,7 +29,8 @@ const state = {
   chatMessages: [],
   incomingFile: null,
   outgoingFile: null,
-  peerCapabilities: null
+  peerCapabilities: null,
+  incomingClipboard: null
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -78,6 +79,19 @@ function updateControlButton() {
     : '<span>⌖</span> ' + (state.controlGranted ? "Control granted" : "Request control");
 }
 
+function updateClipboardButton() {
+  const button = $("[data-action='copy-text']");
+  if (!button) return;
+
+  if (state.role === "controller" && state.incomingClipboard !== null) {
+    button.innerHTML = '<span>□</span> Copy host clipboard';
+  } else {
+    button.innerHTML = state.role === "host"
+      ? '<span>□</span> Send host clipboard'
+      : '<span>□</span> Send clipboard';
+  }
+}
+
 function setModuleStatus(id, value, tone = "") {
   const el = document.getElementById(id);
   if (!el) return;
@@ -121,7 +135,9 @@ function resetModules() {
   state.incomingFile = null;
   state.outgoingFile = null;
   state.peerCapabilities = null;
+  state.incomingClipboard = null;
   renderChat();
+  updateClipboardButton();
 
   setModuleStatus("chatStatus", "OFFLINE");
   setModuleStatus("fileStatus", "READY");
@@ -308,7 +324,8 @@ function showFileOffer(message) {
     totalChunks: message.totalChunks,
     chunks: new Array(message.totalChunks),
     received: new Set(),
-    receivedBytes: 0
+    receivedBytes: 0,
+    accepted: false
   };
 
   $("#fileOfferName").textContent = message.name;
@@ -322,6 +339,7 @@ function acceptFile() {
   const incoming = state.incomingFile;
   if (!incoming || !state.session || !state.peerConnected) return;
 
+  incoming.accepted = true;
   state.session.send("file-transfer", {
     type: "file_accept",
     transferId: incoming.id
@@ -687,14 +705,20 @@ function wireSession(session) {
     }
 
     if (channel === "clipboard") {
-      if (state.role !== "host" || (!state.shareClipboard && !state.controlGranted)) {
-        logEvent("clipboard_rejected_no_consent", {}, "error");
-        return;
-      }
+      if (state.role === "host") {
+        if (!state.shareClipboard && !state.controlGranted) {
+          logEvent("clipboard_rejected_no_consent", {}, "error");
+          return;
+        }
 
-      navigator.clipboard?.writeText(message.text)
-        .then(() => toast("Clipboard text copied to the host browser.", "success"))
-        .catch(() => toast("Host clipboard permission was unavailable.", "error"));
+        navigator.clipboard?.writeText(message.text)
+          .then(() => toast("Clipboard text copied to the host browser.", "success"))
+          .catch(() => toast("Host clipboard permission was unavailable.", "error"));
+      } else {
+        state.incomingClipboard = message.text;
+        updateClipboardButton();
+        toast("Host sent clipboard text. Press Clipboard to copy it locally.", "info");
+      }
 
       logEvent("clipboard_message_received", {
         characters: typeof message.text === "string" ? message.text.length : 0
@@ -755,7 +779,7 @@ function wireSession(session) {
       }
 
       const incoming = state.incomingFile;
-      if (!incoming || incoming.id !== message.transferId) return;
+      if (!incoming || incoming.id !== message.transferId || !incoming.accepted) return;
 
       if (message.type === "file_chunk") {
         if (
@@ -1041,10 +1065,12 @@ function bindEvents() {
       return;
     }
     state.role = button.dataset.role;
-    $$("[data-role]").forEach((el) => el.classList.toggle("selected", el === button));
+    state.incomingClipboard = null;
+    $("[data-role]").forEach((el) => el.classList.toggle("selected", el === button));
     $("#hostForm").classList.toggle("hidden", state.role !== "host");
     $("#controllerForm").classList.toggle("hidden", state.role !== "controller");
     updateControlButton();
+    updateClipboardButton();
   }));
 
   $$("[data-action='create-host']").forEach((button) => button.addEventListener("click", () => createSession("host")));
@@ -1114,24 +1140,52 @@ function bindEvents() {
   });
 
   $("[data-action='copy-text']").addEventListener("click", () => {
-    if (state.role !== "controller" || !state.peerConnected) {
-      toast("Connect to a host first.", "info");
+    if (!state.session || !state.peerConnected) {
+      toast("Connect to a peer first.", "info");
       return;
     }
-    if (!state.shareClipboard && !state.controlGranted) {
-      toast("Clipboard sharing requires host approval.", "info");
+
+    if (
+      state.role === "controller" &&
+      state.incomingClipboard !== null
+    ) {
+      if (!navigator.clipboard) {
+        toast("Clipboard permission was unavailable.", "error");
+        return;
+      }
+
+      navigator.clipboard.writeText(state.incomingClipboard)
+        .then(() => {
+          state.incomingClipboard = null;
+          updateClipboardButton();
+          toast("Host clipboard copied locally.", "success");
+        })
+        .catch(() => toast("Clipboard permission was unavailable.", "error"));
       return;
     }
+
     if (!navigator.clipboard) {
       toast("Clipboard permission was unavailable.", "error");
       return;
     }
+
+    if (!state.shareClipboard && !state.controlGranted) {
+      toast("Clipboard sharing requires host approval.", "info");
+      return;
+    }
+
     navigator.clipboard.readText().then((text) => {
       if (new TextEncoder().encode(text).byteLength > 100 * 1024) {
         toast("Clipboard text is too large.", "error");
         return;
       }
-      if (state.session?.send("clipboard", { type: "clipboard_text", text })) {
+
+      const sent = state.session?.send("clipboard", {
+        type: "clipboard_text",
+        text
+      });
+
+      if (sent) {
         toast("Clipboard text sent.", "success");
       } else {
         toast("Clipboard channel is not connected yet.", "info");
