@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#09111f" />
+    <meta name="description" content="P2P Desk — explicit-consent remote support over WebRTC." />
+    <title>P2P Desk — Remote support, peer to peer</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%2378f0c0'/%3E%3Cpath d='M18 21h28v22H18z' fill='%2309111f'/%3E%3Cpath d='M23 48h18M32 43v5' stroke='%2309111f' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="noise"></div>
+    <header class="topbar">
+      <a class="brand" href="#overview" aria-label="P2P Desk home">
+        <span class="brand-mark"><i></i><i></i><i></i></span>
+        <span>P2P<span class="brand-muted">/</span>DESK</span>
+      </a>
+      <nav class="nav" aria-label="Primary navigation">
+        <a href="#overview" data-route="overview">Overview</a>
+        <a href="#sessions" data-route="sessions">Sessions</a>
+        <a href="#diagnostics" data-route="diagnostics">Diagnostics</a>
+        <a href="#docs" data-route="docs">Docs</a>
+      </nav>
+      <div class="top-actions">
+        <span class="secure-pill"><span class="status-dot green"></span> Encrypted transport</span>
+        <button class="icon-button" id="themeToggle" aria-label="Toggle theme">◐</button>
+      </div>
+    </header>
+
+    <main class="shell">
+      <section class="route" id="route-overview">
+        <div class="eyebrow"><span class="eyebrow-line"></span> REMOTE SUPPORT, WITHOUT THE MIDDLEMAN</div>
+        <div class="hero-grid">
+          <div class="hero-copy">
+            <h1>Make a connection.<br /><em>Keep control.</em></h1>
+            <p class="hero-lede">A consent-first remote support workspace built around direct WebRTC connections. Start with two browser tabs, then graduate to your own signaling service and native host agent.</p>
+            <div class="hero-actions">
+              <button class="button primary" data-action="create-host"><span class="button-icon">↗</span> Start a session</button>
+              <button class="button secondary" data-action="join-session">Join with a code <span>→</span></button>
+            </div>
+            <div class="trust-row">
+              <span><span class="status-dot green"></span> Browser capture only</span>
+              <span><span class="status-dot amber"></span> Native host required for OS control</span>
+            </div>
+          </div>
+          <div class="hero-visual">
+            <div class="orb orb-one"></div><div class="orb orb-two"></div>
+            <div class="connection-card">
+              <div class="connection-card-top"><span class="mini-label">LIVE CONNECTION</span><span class="live-badge"><span class="status-dot green"></span> READY</span></div>
+              <div class="orbit">
+                <div class="orbit-ring ring-one"></div><div class="orbit-ring ring-two"></div>
+                <div class="orbit-node node-top"><span>HOST</span></div>
+                <div class="orbit-node node-bottom"><span>VIEWER</span></div>
+                <div class="orbit-core"><span class="core-pulse"></span><strong>P2P</strong><small>WEBRTC</small></div>
+              </div>
+              <div class="connection-card-bottom"><span>DIRECT ROUTE</span><span>DTLS / SRTP</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-heading">
+          <div><span class="section-kicker">01 / WORKSPACE</span><h2>Start where you are.</h2></div>
+          <span class="muted">No account required for the local demo</span>
+        </div>
+        <div class="feature-grid">
+          <article class="feature-card feature-main">
+            <div class="card-number">01</div><div class="feature-icon mint">⌁</div>
+            <h3>Direct by default</h3><p>Screen and control channels are designed to travel peer-to-peer. Signaling is only for introductions.</p><span class="card-arrow">↗</span>
+          </article>
+          <article class="feature-card">
+            <div class="card-number">02</div><div class="feature-icon blue">◉</div>
+            <h3>Consent is visible</h3><p>View-only is the default. Full control requires an explicit host approval and can be stopped instantly.</p><span class="card-arrow">↗</span>
+          </article>
+          <article class="feature-card">
+            <div class="card-number">03</div><div class="feature-icon violet">⌘</div>
+            <h3>Built to extend</h3><p>Plug in signaling, TURN, and a native host agent when browser permissions are no longer enough.</p><span class="card-arrow">↗</span>
+          </article>
+        </div>
+      </section>
+
+      <section class="route hidden" id="route-sessions">
+        <div class="page-head"><div><span class="section-kicker">02 / SESSION CONTROL</span><h2>Connection room</h2><p>One short code. A clear permission boundary.</p></div><div class="connection-state" id="globalConnectionState"><span class="status-dot gray"></span> IDLE</div></div>
+        <div class="session-layout">
+          <div class="panel session-panel">
+            <div class="panel-head"><div><span class="mini-label">NEW SESSION</span><h3>Choose your role</h3></div><span class="panel-index">A</span></div>
+            <div class="role-grid">
+              <button class="role-card selected" data-role="host"><span class="role-icon">▣</span><strong>Host</strong><small>Share a browser screen</small><span class="role-check">✓</span></button>
+              <button class="role-card" data-role="controller"><span class="role-icon">⌖</span><strong>Controller</strong><small>View and request control</small><span class="role-check">✓</span></button>
+            </div>
+            <div class="session-form" id="hostForm">
+              <label class="toggle-row"><span><strong>Allow control requests</strong><small>View-only remains the starting state</small></span><input type="checkbox" id="allowControl" checked /><i class="toggle"></i></label>
+              <label class="toggle-row"><span><strong>Share clipboard</strong><small>Text only, always user initiated</small></span><input type="checkbox" id="shareClipboard" /><i class="toggle"></i></label>
+              <button class="button primary wide" data-action="create-host"><span class="button-icon">+</span> Create host session</button>
+            </div>
+            <div class="session-form hidden" id="controllerForm">
+              <label class="field-label" for="joinCode">SESSION CODE</label>
+              <div class="code-input-row"><input id="joinCode" class="code-input" inputmode="numeric" maxlength="7" placeholder="000 000" autocomplete="one-time-code" /><button class="button primary" data-action="join-code">Join</button></div>
+              <p class="field-hint">For the no-backend demo, open this URL in a second tab or window on the same origin.</p>
+            </div>
+          </div>
+          <div class="panel live-panel">
+            <div class="panel-head"><div><span class="mini-label">CURRENT SESSION</span><h3 id="sessionTitle">No active session</h3></div><span class="session-badge" id="sessionBadge">IDLE</span></div>
+            <div class="empty-state" id="emptySession"><div class="empty-mark">⌁</div><h4>Nothing connected yet</h4><p>Create a host session, then join from a second tab to test the WebRTC path.</p></div>
+            <div class="active-session hidden" id="activeSession">
+              <div class="session-code-block"><span class="mini-label">YOUR SESSION CODE</span><strong id="sessionCodeDisplay">000 000</strong><button class="copy-button" data-action="copy-code">Copy code</button></div>
+              <div class="peer-row"><div class="avatar">?</div><div><strong id="peerLabel">Waiting for a peer</strong><small id="peerSubtext">Share the code to invite a viewer</small></div><span class="status-chip" id="peerStatus">WAITING</span></div>
+              <div class="video-shell"><video id="remoteVideo" autoplay playsinline tabindex="0" aria-label="Remote screen"></video><div class="video-placeholder" id="videoPlaceholder"><span class="video-symbol">▣</span><strong id="videoTitle">Remote screen appears here</strong><small>When the host starts sharing</small></div><span class="video-label">REMOTE VIEW</span></div>
+              <div class="session-tools">
+                <button class="tool-button" data-action="capture"><span>◉</span> <b id="captureLabel">Share screen</b></button>
+                <button class="tool-button" data-action="control"><span>⌖</span> Request control</button>
+                <button class="tool-button" data-action="copy-text"><span>□</span> Clipboard</button>
+                <button class="tool-button danger" data-action="disconnect"><span>×</span> End session</button>
+              </div>
+              <div class="consent-banner hidden" id="consentBanner"><div><strong>Control requested</strong><p>This viewer wants to send mouse and keyboard commands.</p></div><div class="consent-actions"><button class="button small secondary" data-action="reject-control">Keep view-only</button><button class="button small primary" data-action="approve-control">Allow control</button></div></div>
+            </div>
+          </div>
+        </div>
+        <div class="notice"><span>i</span><p><strong>What this browser version can do:</strong> screen-share through <code>getDisplayMedia()</code>, encrypted WebRTC data channels, explicit consent, and safe telemetry. OS-level mouse/keyboard control requires the native host agent described in the docs.</p></div>
+      </section>
+
+      <section class="route hidden" id="route-diagnostics">
+        <div class="page-head"><div><span class="section-kicker">03 / OBSERVABILITY</span><h2>Diagnostics</h2><p>Only report measurements the browser can actually observe.</p></div><button class="button secondary small" data-action="refresh-stats">Refresh stats ↻</button></div>
+        <div class="diag-grid">
+          <div class="panel health-panel"><div class="panel-head"><div><span class="mini-label">CONNECTION HEALTH</span><h3 id="diagHealth">Not connected</h3></div><span class="health-ring" id="healthRing">—</span></div><div class="metric-list"><div><span>Connection state</span><strong id="diagConnection">idle</strong></div><div><span>ICE state</span><strong id="diagIce">—</strong></div><div><span>Signaling state</span><strong id="diagSignaling">—</strong></div><div><span>Data channel</span><strong id="diagData">—</strong></div></div></div>
+          <div class="panel metrics-panel"><div class="panel-head"><div><span class="mini-label">LIVE METRICS</span><h3>Peer telemetry</h3></div><span class="live-badge"><span class="status-dot green"></span> SAMPLE</span></div><div class="metric-cards"><div><small>ROUND TRIP</small><strong id="metricRtt">—</strong><em>ms</em></div><div><small>VIDEO BITRATE</small><strong id="metricBitrate">—</strong><em>kbps</em></div><div><small>FRAMES</small><strong id="metricFps">—</strong><em>fps</em></div><div><small>ROUTE</small><strong id="metricRoute">—</strong><em>ICE</em></div></div><p class="metric-note">Stats are sampled from RTCPeerConnection when a live connection exists. No measurement is invented for a disconnected session.</p></div>
+        </div>
+        <div class="panel event-panel"><div class="panel-head"><div><span class="mini-label">STRUCTURED EVENTS</span><h3>Session log</h3></div><button class="text-button" data-action="clear-log">Clear</button></div><div class="log-list" id="eventLog"><div class="log-empty">Events from this browser session will appear here.</div></div></div>
+        <div class="panel capabilities-panel"><div class="panel-head"><div><span class="mini-label">CAPABILITY NEGOTIATION</span><h3>Browser client</h3></div><span class="protocol-tag">PROTOCOL 1.0.0</span></div><div class="capability-grid"><span class="cap yes">✓ Screen capture</span><span class="cap yes">✓ WebRTC transport</span><span class="cap yes">✓ Data channels</span><span class="cap yes">✓ View-only consent</span><span class="cap limited">~ Clipboard (prompted)</span><span class="cap no">× OS input control</span><span class="cap no">× Multi-monitor agent</span><span class="cap no">× Native file paths</span></div></div>
+      </section>
+
+      <section class="route hidden" id="route-docs">
+        <div class="page-head"><div><span class="section-kicker">04 / HANDOFF</span><h2>Build notes</h2><p>The boundaries that keep this prototype truthful and safe.</p></div></div>
+        <div class="docs-grid">
+          <article class="panel doc-card"><span class="doc-icon mint">⌁</span><span class="mini-label">ARCHITECTURE</span><h3>Static client → signaling → P2P</h3><p>GitHub Pages hosts only the client. A production deployment adds a TLS WebSocket signaling service for SDP/ICE exchange and a TURN server for restricted networks. Desktop media and input never belong on the signaling path.</p><div class="flow"><span>GitHub Pages</span><i>→</i><span>WSS signaling</span><i>→</i><span>WebRTC</span></div></article>
+          <article class="panel doc-card"><span class="doc-icon blue">▣</span><span class="mini-label">HOST AGENT</span><h3>Browser capture is not OS control</h3><p>JavaScript cannot move the Windows cursor or type into arbitrary applications. The planned Windows agent must be visible, consented, permission-aware, and include a local emergency stop.</p><ul class="doc-list"><li>Windows first, then macOS/Linux</li><li>View-only by default</li><li>Native APIs, never security bypasses</li></ul></article>
+          <article class="panel doc-card"><span class="doc-icon violet">◇</span><span class="mini-label">DEPLOYMENT</span><h3>GitHub Pages in three steps</h3><ol class="doc-list numbered"><li>Upload this folder to a repository.</li><li>Enable Pages from the main branch root.</li><li>Set <code>config.js</code> before enabling a signaling server.</li></ol><a class="text-link" href="README.md">Read the full README ↗</a></article>
+        </div>
+        <div class="panel roadmap-panel"><div class="panel-head"><div><span class="mini-label">IMPLEMENTATION ROADMAP</span><h3>From browser milestone to product</h3></div></div><div class="roadmap"><div class="road-step done"><span>01</span><strong>Static client</strong><small>Done in this package</small></div><div class="road-line"></div><div class="road-step active"><span>02</span><strong>Signaling + TURN</strong><small>Deploy separately</small></div><div class="road-line"></div><div class="road-step"><span>03</span><strong>Windows agent</strong><small>Native implementation</small></div><div class="road-line"></div><div class="road-step"><span>04</span><strong>Hardening + E2E</strong><small>Production gate</small></div></div></div>
+      </section>
+    </main>
+    <div class="toast-stack" id="toastStack" aria-live="polite"></div>
+    <script src="config.js"></script>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
