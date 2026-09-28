@@ -163,19 +163,10 @@ test("two browser pages connect by code, deliver screen, grant/revoke control, a
   await expect(controller.locator("#peerSubtext")).toContainText("Full control granted", { timeout: 10_000 });
   await expect(host.locator("#nativeStatus")).toHaveText("CONNECTED", { timeout: 10_000 });
 
-  await controller.locator("#remoteVideo").dispatchEvent("pointermove", {
-    clientX: 320,
-    clientY: 180
-  });
-  await controller.locator("#remoteVideo").dispatchEvent("pointerdown", {
-    clientX: 320,
-    clientY: 180,
-    button: 0
-  });
-  await controller.locator("#remoteVideo").dispatchEvent("pointerup", {
-    clientX: 320,
-    clientY: 180,
-    button: 0
+  await controller.locator("#remoteVideo").hover({ position: { x: 320, y: 180 } });
+  await controller.locator("#remoteVideo").click({
+    position: { x: 320, y: 180 },
+    button: "left"
   });
   await expect.poll(async () => {
     const response = await host.evaluate(() => fetch("/agent-events").then((r) => r.json()));
