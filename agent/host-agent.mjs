@@ -3,6 +3,7 @@ import { WebSocketServer } from "ws";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
 import { validateInputMessage } from "../protocol.js";
 
 const execFileAsync = promisify(execFile);
@@ -76,7 +77,9 @@ class WindowsInputBridge {
   start() {
     if (process.platform !== "win32") return false;
 
-    const script = new URL("./windows-input.ps1", import.meta.url);
+    const script = fileURLToPath(
+      new URL("./windows-input.ps1", import.meta.url)
+    );
     this.child = spawn("powershell.exe", [
       "-NoLogo",
       "-NoProfile",
@@ -84,7 +87,7 @@ class WindowsInputBridge {
       "-ExecutionPolicy",
       "Bypass",
       "-File",
-      script.pathname
+      script
     ], {
       stdio: ["pipe", "pipe", "pipe"]
     });
@@ -122,6 +125,7 @@ class WindowsInputBridge {
 }
 
 const windows = new WindowsInputBridge();
+const windowsReady = windows.start();
 
 async function linuxInput(message) {
   if (!(await commandExists("xdotool"))) return false;
@@ -200,7 +204,7 @@ async function executeInput(message) {
 function capabilities() {
   if (process.platform === "win32") {
     return {
-      nativeInput: true,
+      nativeInput: windowsReady && windows.ready,
       clipboard: true,
       files: false,
       monitors: true
