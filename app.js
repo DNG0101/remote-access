@@ -1440,18 +1440,6 @@ function bindEvents() {
   });
   $("#remoteVideo").addEventListener("dblclick", () => sendInput({
     type: "mouse_button",
-    button: event.button === 2 ? "right" : event.button === 1 ? "middle" : "left",
-    action: "down",
-    timestamp: Date.now()
-  }));
-  $("#remoteVideo").addEventListener("pointerup", (event) => sendInput({
-    type: "mouse_button",
-    button: event.button === 2 ? "right" : event.button === 1 ? "middle" : "left",
-    action: "up",
-    timestamp: Date.now()
-  }));
-  $("#remoteVideo").addEventListener("dblclick", () => sendInput({
-    type: "mouse_button",
     button: "left",
     action: "double",
     timestamp: Date.now()
