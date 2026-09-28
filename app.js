@@ -87,8 +87,8 @@ function updateClipboardButton() {
   const button = $("[data-action='copy-text']");
   if (!button) return;
 
-  if (state.role === "controller" && state.incomingClipboard !== null) {
-    button.innerHTML = '<span>□</span> Copy host clipboard';
+  if (state.incomingClipboard !== null) {
+    button.innerHTML = '<span>□</span> Copy peer clipboard';
   } else {
     button.innerHTML = state.role === "host"
       ? '<span>□</span> Send host clipboard'
@@ -835,24 +835,15 @@ function wireSession(session) {
     }
 
     if (channel === "clipboard") {
-      if (state.role === "host") {
-        if (!state.shareClipboard && !state.controlGranted) {
-          logEvent("clipboard_rejected_no_consent", {}, "error");
-          return;
-        }
-
-        if (!navigator.clipboard) {
-          toast("Host clipboard API is unavailable.", "error");
-        } else {
-          navigator.clipboard.writeText(message.text)
-            .then(() => toast("Clipboard text copied to the host browser.", "success"))
-            .catch(() => toast("Host clipboard permission was unavailable.", "error"));
-        }
-      } else {
-        state.incomingClipboard = message.text;
-        updateClipboardButton();
-        toast("Host sent clipboard text. Press Clipboard to copy it locally.", "info");
+      if (state.role === "host" && !state.shareClipboard && !state.controlGranted) {
+        logEvent("clipboard_rejected_no_consent", {}, "error");
+        toast("Host has not allowed clipboard sharing.", "info");
+        return;
       }
+
+      state.incomingClipboard = message.text;
+      updateClipboardButton();
+      toast("Peer sent clipboard text. Press Copy peer clipboard to apply it locally.", "info");
 
       logEvent("clipboard_message_received", {
         characters: typeof message.text === "string" ? message.text.length : 0
@@ -1381,10 +1372,7 @@ function bindEvents() {
       return;
     }
 
-    if (
-      state.role === "controller" &&
-      state.incomingClipboard !== null
-    ) {
+    if (state.incomingClipboard !== null) {
       if (!navigator.clipboard) {
         toast("Clipboard permission was unavailable.", "error");
         return;
@@ -1394,7 +1382,7 @@ function bindEvents() {
         .then(() => {
           state.incomingClipboard = null;
           updateClipboardButton();
-          toast("Host clipboard copied locally.", "success");
+          toast("Peer clipboard copied locally.", "success");
         })
         .catch(() => toast("Clipboard permission was unavailable.", "error"));
       return;
@@ -1405,8 +1393,12 @@ function bindEvents() {
       return;
     }
 
-    if (!state.shareClipboard && !state.controlGranted) {
-      toast("Clipboard sharing requires host approval.", "info");
+    if (
+      state.role === "host" &&
+      !state.shareClipboard &&
+      !state.controlGranted
+    ) {
+      toast("Enable clipboard sharing or control before sending host clipboard.", "info");
       return;
     }
 

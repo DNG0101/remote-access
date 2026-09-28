@@ -51,6 +51,7 @@ test("two browser pages connect by code, deliver screen, grant/revoke control, a
   // Start capture before the controller joins so the initial SDP offer must include media.
   await host.locator("[data-action='capture']").click();
   await expect(host.locator("#captureLabel")).toHaveText("Screen sharing");
+  await host.locator("#shareClipboard").check();
 
   const controller = await context.newPage();
   controller.on("pageerror", (error) => browserErrors.push("controller: " + error.message));
@@ -93,7 +94,11 @@ test("two browser pages connect by code, deliver screen, grant/revoke control, a
   await expect(host.locator("#chatList")).toContainText("hello from controller", { timeout: 10_000 });
 
   await controller.locator("[data-action='copy-text']").click();
+  await expect(host.locator("[data-action='copy-text']")).toHaveText(/Copy peer clipboard/);
+  await host.locator("[data-action='copy-text']").click();
   await expect.poll(() => host.evaluate(() => window.__hostClipboard || "")).toBe("clipboard from controller");
+
+  await controller.locator("[data-action='copy-text']").click();
 
   await host.locator("#fileInput").setInputFiles({
     name: "p2p-desk-test.txt",
