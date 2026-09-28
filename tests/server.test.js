@@ -18,3 +18,53 @@ test("explicit leave is relayed to the remaining peer",async()=>{
   h.close();c.close();
   await new Promise(r=>s.httpServer.close(r));
 });
+
+
+test("rejects an unjoined leave without crashing the signaling server", async () => {
+  const s = createSignalingServer({ port: 0 });
+  await new Promise((resolve) => s.httpServer.listen(0, resolve));
+  const port = s.httpServer.address().port;
+  const ws = new WebSocket("ws://127.0.0.1:" + port);
+
+  await new Promise((resolve) => ws.once("open", resolve));
+  ws.send(JSON.stringify({
+    roomId: "111111",
+    from: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    kind: "leave",
+    sentAt: Date.now()
+  }));
+
+  assert.equal(
+    (await wait(ws, (message) => message.kind === "error")).codeName,
+    "NOT_JOINED"
+  );
+
+  ws.close();
+  await new Promise((resolve) => s.httpServer.close(resolve));
+});
+
+test("allows only one host and one controller per room", async () => {
+  const s = createSignalingServer({ port: 0 });
+  await new Promise((resolve) => s.httpServer.listen(0, resolve));
+  const port = s.httpServer.address().port;
+
+  const host1 = new WebSocket("ws://127.0.0.1:" + port);
+  const host2 = new WebSocket("ws://127.0.0.1:" + port);
+
+  await Promise.all([
+    new Promise((resolve) => host1.once("open", resolve)),
+    new Promise((resolve) => host2.once("open", resolve))
+  ]);
+
+  host1.send(join("222222", "host", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"));
+  host2.send(join("222222", "host", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"));
+
+  assert.equal(
+    (await wait(host2, (message) => message.kind === "error")).codeName,
+    "ROLE_CONFLICT"
+  );
+
+  host1.close();
+  host2.close();
+  await new Promise((resolve) => s.httpServer.close(resolve));
+});
