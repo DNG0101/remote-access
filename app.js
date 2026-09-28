@@ -188,6 +188,10 @@ function wireSession(session) {
     if (detail?.mode) {
       $("#diagSignaling").title = "Signaling mode: " + detail.mode;
     }
+    if (detail?.peerId && state.role === "host" && state.session) {
+      const inviteButton = $("[data-action='copy-invite']");
+      if (inviteButton) inviteButton.dataset.inviteUrl = state.session.inviteUrl;
+    }
   });
 
   session.on("channel", (detail) => {
