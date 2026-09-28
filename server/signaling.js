@@ -80,6 +80,7 @@ function withinRateLimit(ip, kind) {
 
 function sendServerError(ws, codeName, message) {
   send(ws, {
+    server: true,
     kind: "error",
     codeName,
     message
