@@ -7,7 +7,7 @@
     <meta name="description" content="P2P Desk — explicit-consent remote support over WebRTC." />
     <title>P2P Desk — Remote support, peer to peer</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%2378f0c0'/%3E%3Cpath d='M18 21h28v22H18z' fill='%2309111f'/%3E%3Cpath d='M23 48h18M32 43v5' stroke='%2309111f' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E" />
-    <link rel="stylesheet" href="styles.css?v=0.4.0" />
+    <link rel="stylesheet" href="styles.css?v=0.5.0" />
   </head>
   <body>
     <div class="noise"></div>
@@ -109,12 +109,30 @@
               <div class="session-tools">
                 <button class="tool-button" data-action="capture"><span>◉</span> <b id="captureLabel">Share screen</b></button>
                 <button class="tool-button" data-action="control"><span>⌖</span> <b id="controlLabel">Request control</b></button>
+                <button class="tool-button controller-only" data-action="mobile-keyboard"><span>⌨</span> Mobile keyboard</button>
                 <button class="tool-button" data-action="copy-text"><span>□</span> Send clipboard</button>
                 <button class="tool-button" data-action="send-file"><span>⇧</span> Send file</button>
                 <button class="tool-button danger" data-action="disconnect"><span>×</span> End session</button>
               </div>
               <input id="fileInput" type="file" hidden />
               <div class="consent-banner hidden" id="consentBanner"><div><strong>Control requested</strong><p>This viewer wants to send mouse and keyboard commands.</p></div><div class="consent-actions"><button class="button small secondary" data-action="reject-control">Keep view-only</button><button class="button small primary" data-action="approve-control">Allow control</button></div></div>
+              <div class="mobile-keyboard hidden" id="mobileKeyboardPanel">
+                <div class="mobile-keyboard-head"><strong>Mobile keyboard</strong><button class="text-button" data-action="close-keyboard">Done</button></div>
+                <div class="mobile-keyboard-compose">
+                  <input id="mobileTextInput" autocomplete="off" autocapitalize="sentences" inputmode="text" placeholder="Type on the remote PC…" />
+                  <button class="button small primary" data-action="send-mobile-text">Send</button>
+                </div>
+                <div class="quick-key-row" aria-label="Quick keys">
+                  <button class="copy-button" data-mobile-key="Escape" data-mobile-code="Escape">Esc</button>
+                  <button class="copy-button" data-mobile-key="Tab" data-mobile-code="Tab">Tab</button>
+                  <button class="copy-button" data-mobile-key="Enter" data-mobile-code="Enter">Enter</button>
+                  <button class="copy-button" data-mobile-key="Backspace" data-mobile-code="Backspace">⌫</button>
+                  <button class="copy-button" data-mobile-key="ArrowUp" data-mobile-code="ArrowUp">↑</button>
+                  <button class="copy-button" data-mobile-key="ArrowDown" data-mobile-code="ArrowDown">↓</button>
+                  <button class="copy-button" data-mobile-key="ArrowLeft" data-mobile-code="ArrowLeft">←</button>
+                  <button class="copy-button" data-mobile-key="ArrowRight" data-mobile-code="ArrowRight">→</button>
+                </div>
+              </div>
               <div class="module-grid">
                 <section class="module-card">
                   <div class="module-head"><div><span class="mini-label">CHAT</span><strong>Peer messages</strong></div><span class="module-status" id="chatStatus">OFFLINE</span></div>
@@ -158,7 +176,7 @@
       </section>
     </main>
     <div class="toast-stack" id="toastStack" aria-live="polite"></div>
-    <script src="config.js?v=0.4.0"></script>
-    <script type="module" src="app.js?v=0.4.0"></script>
+    <script src="config.js?v=0.5.0"></script>
+    <script type="module" src="app.js?v=0.5.0"></script>
   </body>
 </html>
