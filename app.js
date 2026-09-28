@@ -1,5 +1,5 @@
+import { PeerSession } from "./webrtc.js";
 import {
-  PeerSession,
   validateInputMessage,
   validateControlMessage,
   generateSessionCode,
