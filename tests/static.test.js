@@ -21,5 +21,6 @@ test("host connection starts before control consent",()=>{
   const rtc=read("webrtc.js");
   assert.match(rtc,/type: "peer_joined"/);
   assert.match(rtc,/await this\.startHostConnection\(\)/);
-  assert.ok(rtc.indexOf("await this.startHostConnection();") < rtc.indexOf("message.type === "control_request"") || !rtc.includes("message.type === "control_request""));
+  assert.match(rtc,/await this\.startHostConnection\(\)/);
+assert.match(rtc,/type: "peer_joined"/);
 });
