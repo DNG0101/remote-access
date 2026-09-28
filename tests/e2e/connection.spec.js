@@ -189,7 +189,6 @@ test("two browser pages connect by code, deliver screen, grant/revoke control, a
       packet?.text === "MOBILE TEXT TEST"
     );
   }).toBe(true);
-  await controller.locator("[data-action='close-keyboard']").click();
   await controller.locator("[data-mobile-shortcut='CTRL+C']").click();
   await expect.poll(async () => {
     const response = await host.evaluate(() => fetch("/agent-events").then((r) => r.json()));
@@ -198,6 +197,7 @@ test("two browser pages connect by code, deliver screen, grant/revoke control, a
       inputs.some((packet) => packet?.type === "keyboard" && packet?.code === "KeyC" && packet?.action === "down" && packet?.modifiers?.includes("CTRL")) &&
       inputs.some((packet) => packet?.type === "keyboard" && packet?.code === "ControlLeft" && packet?.action === "up");
   }).toBe(true);
+  await controller.locator("[data-action='close-keyboard']").click();
 
   await host.locator("[data-action='control']").click();
   await expect(controller.locator("#peerSubtext")).toContainText("view-only", { timeout: 10_000 });
