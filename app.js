@@ -1352,13 +1352,13 @@ function bindEvents() {
       sendMobileText(event.currentTarget.value);
     }
   });
-  $(".quick-key-row [data-mobile-key]").forEach((button) => {
+  $$(".quick-key-row [data-mobile-key]").forEach((button) => {
     button.addEventListener("click", () => {
       sendQuickKey(button.dataset.mobileKey, button.dataset.mobileCode);
     });
   });
 
-  $(".mobile-shortcut-row [data-mobile-shortcut]").forEach((button) => {
+  $$(".mobile-shortcut-row [data-mobile-shortcut]").forEach((button) => {
     button.addEventListener("click", () => {
       sendMobileShortcut(button.dataset.mobileShortcut);
     });
