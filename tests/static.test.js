@@ -20,6 +20,7 @@ test("controller can join a session by six-digit room code", () => {
   assert.match(app, /createSession\("controller", inviteCode\)/);
   assert.match(app, /data-action='send-file'/);
   assert.match(app, /data-action='send-chat'/);
+  assert.match(app, /data-action='save-file'/);
   assert.match(app, /validateFileTransferMessage/);
   assert.match(app, /validateTelemetryMessage/);
 });
