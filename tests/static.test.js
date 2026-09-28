@@ -2,27 +2,34 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 
-const read=(path)=>fs.readFileSync(new URL("../"+path, import.meta.url),"utf8");
+const read = (path) => fs.readFileSync(new URL("../" + path, import.meta.url), "utf8");
 
-test("GitHub Pages loads the pinned public PeerJS client",()=>{
-  const html=read("index.html");
-  assert.match(html,/cdn\.jsdelivr\.net\/npm\/peerjs@1\.5\.5\/dist\/peerjs\.min\.js/);
-  assert.match(html,/data-action="copy-invite"/);
+test("GitHub Pages loads the application without third-party runtime dependencies", () => {
+  const html = read("index.html");
+  assert.doesNotMatch(html, /peerjs/i);
+  assert.match(html, /type="module" src="app\.js"/);
+  assert.match(html, /data-action="copy-invite"/);
 });
 
-test("controller invite links are parsed by the client",()=>{
-  const app=read("app.js");
-  assert.match(app,/new URLSearchParams\(location\.search\)/);
-  assert.match(app,/inviteParams\.get\("join"\)/);
-  assert.match(app,/createSession\("controller", inviteCode, invitePeerId\)/);
+test("controller can join a session by six-digit room code", () => {
+  const app = read("app.js");
+  assert.match(app, /normalizeSessionCode\(code\)/);
+  assert.match(app, /createSession\("controller", code\)/);
+  assert.match(app, /inviteParams\.get\("code"\)/);
+  assert.match(app, /createSession\("controller", inviteCode\)/);
 });
 
-test("host establishes the data connection before optional control",()=>{
-  const rtc=read("webrtc.js");
-  assert.match(rtc,/peerIdForSessionCode/);
-  assert.match(rtc,/new PeerCtor\(requestedPeerId, peerOptions\)/);
-  assert.match(rtc,/this\.peer\.on\("connection"/);
-  assert.match(rtc,/connection\.on\("open"/);
-  assert.match(rtc,/this\.emit\("state", "connected"\)/);
-  assert.match(rtc,/this\.sendScreen\(\)/);
+test("host establishes WebRTC before optional control consent", () => {
+  const rtc = read("webrtc.js");
+  assert.match(rtc, /kind: "offer"/);
+  assert.match(rtc, /kind: "answer"/);
+  assert.match(rtc, /kind: "candidate"/);
+  assert.match(rtc, /await this\.ensurePeerConnection\(true\)/);
+  assert.match(rtc, /this\.emit\("state", "connected"\)/);
+});
+
+test("public client is configured for a WSS signaling endpoint", () => {
+  const config = read("config.js");
+  assert.match(config, /wss:\/\//);
+  assert.match(config, /signalingUrl/);
 });
