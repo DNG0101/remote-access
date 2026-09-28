@@ -27,3 +27,16 @@
 .file-offer small{font-size:10px;color:var(--muted);margin-top:4px}
 @media(max-width:850px){.module-grid{grid-template-columns:1fr}}
 @media(max-width:520px){.module-card{padding:15px}.chat-list{height:140px}.file-offer{display:block}.file-offer .consent-actions{margin-top:9px}}
+
+.mobile-keyboard{margin-top:12px;background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:12px}
+.mobile-keyboard-head{display:flex;justify-content:space-between;align-items:center;font:500 12px "Space Grotesk";color:var(--ink);margin-bottom:9px}
+.mobile-keyboard-compose{display:flex;gap:7px}
+.mobile-keyboard-compose input{min-width:0;flex:1;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:10px 11px;color:var(--ink);font-size:12px}
+.quick-key-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.quick-key-row .copy-button{margin-left:0;min-width:36px}
+.module-note{font-size:11px;line-height:1.6;color:var(--muted);margin:0}
+#remoteVideo{touch-action:none}
+@media(max-width:520px){
+  .mobile-keyboard-compose input{font-size:16px}
+  .quick-key-row{gap:5px}
+}
