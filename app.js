@@ -789,20 +789,6 @@ function wireSession(session) {
         logEvent("input_rejected", { reason: "no_control_or_invalid" }, "error");
         return;
       }
-      if (
-        state.nativeAgent?.connected &&
-        state.nativeAgent.capabilities.nativeInput
-      ) {
-        const sentToAgent = state.nativeAgent.sendInput(message);
-        if (!sentToAgent) {
-          logEvent("native_input_send_failed", { type: message.type }, "error");
-        }
-      } else if (!state.nativeAgentWarned) {
-        state.nativeAgentWarned = true;
-        toast("Control is granted, but no native host agent is connected. Browser control cannot operate the PC operating system.", "info");
-        setModuleStatus("nativeStatus", "REQUIRED", "amber");
-      }
-
       const forwarded =
         state.nativeAgent?.connected &&
         state.nativeAgent.capabilities.nativeInput &&
