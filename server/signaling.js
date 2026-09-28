@@ -2,16 +2,27 @@ import http from "node:http";
 import { WebSocketServer } from "ws";
 
 const PORT = Number(process.env.PORT || 8787);
-const ROOM_TTL_MS = Math.max(60_000, Number(process.env.ROOM_TTL_MS || 30 * 60_000));
+const ROOM_TTL_MS = Math.max(
+  60_000,
+  Number(process.env.ROOM_TTL_MS || 30 * 60_000)
+);
 const MAX_MESSAGE_BYTES = 256 * 1024;
-const MAX_CONNECTIONS_PER_IP = Math.max(2, Number(process.env.MAX_CONNECTIONS_PER_IP || 20));
-const MAX_JOINS_PER_IP = Math.max(2, Number(process.env.MAX_JOINS_PER_IP || 20));
+const MAX_CONNECTIONS_PER_IP = Math.max(
+  2,
+  Number(process.env.MAX_CONNECTIONS_PER_IP || 20)
+);
+const MAX_JOINS_PER_IP = Math.max(
+  2,
+  Number(process.env.MAX_JOINS_PER_IP || 20)
+);
 const WINDOW_MS = 60_000;
 
 const rooms = new Map();
 const ips = new Map();
 
-function now() { return Date.now(); }
+function now() {
+  return Date.now();
+}
 
 function getIp(req) {
   const forwarded = req.headers["x-forwarded-for"];
@@ -27,11 +38,21 @@ function send(ws, message) {
 }
 
 function validRoomId(roomId) {
-  return typeof roomId === "string" && /^[0-9]{6}$/.test(roomId);
+  return (
+    typeof roomId === "string" &&
+    /^\d{6}$/.test(roomId)
+  );
 }
 
 function validPeerId(peerId) {
-  return typeof peerId === "string" && /^[A-Za-z0-9_-]{8,96}$/.test(peerId);
+  return (
+    typeof peerId === "string" &&
+    /^[A-Za-z0-9_-]{8,96}$/.test(peerId)
+  );
+}
+
+function validRole(role) {
+  return role === "host" || role === "controller";
 }
 
 function withinRateLimit(ip, kind) {
@@ -46,7 +67,10 @@ function withinRateLimit(ip, kind) {
     current.joins = 0;
   }
 
-  if (kind === "join") current.joins++;
+  if (kind === "join") {
+    current.joins++;
+  }
+
   ips.set(ip, current);
 
   return kind === "join"
@@ -54,21 +78,12 @@ function withinRateLimit(ip, kind) {
     : current.sockets <= MAX_CONNECTIONS_PER_IP;
 }
 
-function cleanupRoom(roomId) {
-  const room = rooms.get(roomId);
-  if (!room) return;
-
-  if (now() - room.createdAt > ROOM_TTL_MS) {
-    for (const peer of room.peers.values()) {
-      send(peer.ws, {
-        kind: "error",
-        codeName: "SESSION_EXPIRED",
-        message: "Session expired."
-      });
-      try { peer.ws.close(4001, "Session expired"); } catch {}
-    }
-    rooms.delete(roomId);
-  }
+function sendServerError(ws, codeName, message) {
+  send(ws, {
+    kind: "error",
+    codeName,
+    message
+  });
 }
 
 function broadcastLeave(roomId, peerId) {
@@ -76,6 +91,8 @@ function broadcastLeave(roomId, peerId) {
   if (!room) return;
 
   for (const other of room.peers.values()) {
+    if (other.id === peerId) continue;
+
     send(other.ws, {
       roomId,
       from: peerId,
@@ -86,6 +103,32 @@ function broadcastLeave(roomId, peerId) {
   }
 }
 
+function expireRoom(roomId) {
+  const room = rooms.get(roomId);
+  if (!room) return;
+
+  if (now() - room.createdAt <= ROOM_TTL_MS) {
+    return;
+  }
+
+  const peers = [...room.peers.values()];
+  for (const peer of peers) {
+    sendServerError(
+      peer.ws,
+      "SESSION_EXPIRED",
+      "Session expired."
+    );
+  }
+
+  for (const peer of peers) {
+    try {
+      peer.ws.close(4001, "Session expired");
+    } catch {}
+  }
+
+  rooms.delete(roomId);
+}
+
 export function createSignalingServer({ port = PORT } = {}) {
   const httpServer = http.createServer((req, res) => {
     if (req.url === "/healthz") {
@@ -93,10 +136,12 @@ export function createSignalingServer({ port = PORT } = {}) {
         "content-type": "application/json",
         "cache-control": "no-store"
       });
-      res.end(JSON.stringify({
-        ok: true,
-        rooms: rooms.size
-      }));
+      res.end(
+        JSON.stringify({
+          ok: true,
+          rooms: rooms.size
+        })
+      );
       return;
     }
 
@@ -138,38 +183,77 @@ export function createSignalingServer({ port = PORT } = {}) {
       try {
         message = JSON.parse(raw.toString());
       } catch {
-        send(ws, {
-          kind: "error",
-          codeName: "INVALID_JSON",
-          message: "Invalid JSON."
-        });
+        sendServerError(
+          ws,
+          "INVALID_JSON",
+          "Invalid JSON."
+        );
         return;
       }
 
-      if (!message || typeof message !== "object") return;
+      if (!message || typeof message !== "object") {
+        sendServerError(
+          ws,
+          "INVALID_MESSAGE",
+          "A JSON object is required."
+        );
+        return;
+      }
 
       const roomId = message.roomId;
       const from = message.from;
 
       if (!validRoomId(roomId) || !validPeerId(from)) {
-        send(ws, {
-          kind: "error",
-          codeName: "INVALID_ENVELOPE",
-          message: "roomId and from are required."
-        });
+        sendServerError(
+          ws,
+          "INVALID_ENVELOPE",
+          "roomId and from are required."
+        );
         return;
       }
 
-      cleanupRoom(roomId);
+      expireRoom(roomId);
 
       if (message.announce === true) {
-        if (!withinRateLimit(ip, "join")) {
-          send(ws, {
-            kind: "error",
-            codeName: "RATE_LIMITED",
-            message: "Too many session attempts. Try again later."
-          });
+        if (!validRole(message.role)) {
+          sendServerError(
+            ws,
+            "INVALID_ROLE",
+            "role must be host or controller."
+          );
           return;
+        }
+
+        if (!withinRateLimit(ip, "join")) {
+          sendServerError(
+            ws,
+            "RATE_LIMITED",
+            "Too many session attempts. Try again later."
+          );
+          return;
+        }
+
+        if (peer) {
+          if (
+            peer.roomId !== roomId ||
+            peer.id !== from
+          ) {
+            sendServerError(
+              ws,
+              "ALREADY_JOINED",
+              "This WebSocket is already joined to another session."
+            );
+            return;
+          }
+
+          if (peer.role !== message.role) {
+            sendServerError(
+              ws,
+              "ROLE_MISMATCH",
+              "A connected peer cannot change roles."
+            );
+            return;
+          }
         }
 
         let room = rooms.get(roomId);
@@ -181,23 +265,46 @@ export function createSignalingServer({ port = PORT } = {}) {
           rooms.set(roomId, room);
         }
 
-        if (room.peers.size >= 2 && !room.peers.has(from)) {
-          send(ws, {
-            kind: "error",
-            codeName: "SESSION_BUSY",
-            message: "This session already has two peers."
-          });
+        const duplicateRole = [...room.peers.values()].find(
+          (existing) =>
+            existing.id !== from &&
+            existing.role === message.role
+        );
+
+        if (duplicateRole) {
+          sendServerError(
+            ws,
+            "ROLE_CONFLICT",
+            "A " + message.role + " is already connected to this session."
+          );
+          return;
+        }
+
+        if (
+          room.peers.size >= 2 &&
+          !room.peers.has(from)
+        ) {
+          sendServerError(
+            ws,
+            "SESSION_BUSY",
+            "This session already has two peers."
+          );
           return;
         }
 
         const existing = room.peers.get(from);
-        if (existing && existing.ws !== ws) {
-          try { existing.ws.close(4002, "Session replaced"); } catch {}
+        if (
+          existing &&
+          existing.ws !== ws
+        ) {
+          try {
+            existing.ws.close(4002, "Session replaced");
+          } catch {}
         }
 
         peer = {
           id: from,
-          role: message.role === "host" ? "host" : "controller",
+          role: message.role,
           roomId,
           ws,
           joinedAt: now()
@@ -224,37 +331,35 @@ export function createSignalingServer({ port = PORT } = {}) {
             sentAt: now()
           });
         }
+
+        return;
+      }
+
+      if (
+        !peer ||
+        peer.roomId !== roomId ||
+        peer.id !== from
+      ) {
+        sendServerError(
+          ws,
+          "NOT_JOINED",
+          "Join the session before sending signaling messages."
+        );
         return;
       }
 
       if (message.kind === "leave") {
         const room = rooms.get(roomId);
         if (!room) return;
-        for (const other of room.peers.values()) {
-          if (other.id !== peer.id) {
-            send(other.ws, {
-              roomId,
-              from: peer.id,
-              to: other.id,
-              kind: "leave",
-              sentAt: now()
-            });
-          }
-        }
+
+        broadcastLeave(roomId, peer.id);
         room.peers.delete(peer.id);
         peer = null;
-        if (!room.peers.size) rooms.delete(roomId);
-        return;
-      }
 
-      if (!peer ||
-          peer.roomId !== roomId ||
-          peer.id !== from) {
-        send(ws, {
-          kind: "error",
-          codeName: "NOT_JOINED",
-          message: "Join the session before sending signaling messages."
-        });
+        if (!room.peers.size) {
+          rooms.delete(roomId);
+        }
+
         return;
       }
 
@@ -263,18 +368,23 @@ export function createSignalingServer({ port = PORT } = {}) {
 
       if (message.to) {
         const target = room.peers.get(message.to);
+
         if (!target) {
-          send(ws, {
-            kind: "error",
-            codeName: "PEER_NOT_FOUND",
-            message: "The other peer is no longer connected."
-          });
+          sendServerError(
+            ws,
+            "PEER_NOT_FOUND",
+            "The other peer is no longer connected."
+          );
           return;
         }
+
         send(target.ws, message);
-      } else {
-        for (const other of room.peers.values()) {
-          if (other.id !== peer.id) send(other.ws, message);
+        return;
+      }
+
+      for (const other of room.peers.values()) {
+        if (other.id !== peer.id) {
+          send(other.ws, message);
         }
       }
     });
@@ -282,16 +392,25 @@ export function createSignalingServer({ port = PORT } = {}) {
     ws.on("close", () => {
       if (peer) {
         const room = rooms.get(peer.roomId);
-        if (room?.peers.get(peer.id)?.ws === ws) {
+
+        if (
+          room?.peers.get(peer.id)?.ws === ws
+        ) {
           room.peers.delete(peer.id);
           broadcastLeave(peer.roomId, peer.id);
-          if (!room.peers.size) rooms.delete(peer.roomId);
+
+          if (!room.peers.size) {
+            rooms.delete(peer.roomId);
+          }
         }
       }
 
       const current = ips.get(ip);
       if (current) {
-        current.sockets = Math.max(0, current.sockets - 1);
+        current.sockets = Math.max(
+          0,
+          current.sockets - 1
+        );
         ips.set(ip, current);
       }
     });
@@ -300,22 +419,42 @@ export function createSignalingServer({ port = PORT } = {}) {
   });
 
   const interval = setInterval(() => {
-    for (const roomId of rooms.keys()) cleanupRoom(roomId);
+    for (const roomId of rooms.keys()) {
+      expireRoom(roomId);
+    }
+
     for (const [ip, state] of ips) {
-      if (state.sockets === 0 && now() - state.windowStart > WINDOW_MS) {
+      if (
+        state.sockets === 0 &&
+        now() - state.windowStart > WINDOW_MS
+      ) {
         ips.delete(ip);
       }
     }
   }, 30_000);
 
-  httpServer.on("close", () => clearInterval(interval));
+  httpServer.on("close", () => {
+    clearInterval(interval);
+  });
 
-  return { httpServer, wss, rooms };
+  return {
+    httpServer,
+    wss,
+    rooms
+  };
 }
 
-if (process.argv[1] && new URL(import.meta.url).pathname === process.argv[1]) {
-  const server = createSignalingServer({ port: PORT });
+if (
+  process.argv[1] &&
+  new URL(import.meta.url).pathname === process.argv[1]
+) {
+  const server = createSignalingServer({
+    port: PORT
+  });
+
   server.httpServer.listen(PORT, () => {
-    console.log("P2P Desk signaling server listening on " + PORT);
+    console.log(
+      "P2P Desk signaling server listening on " + PORT
+    );
   });
 }
