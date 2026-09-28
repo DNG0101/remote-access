@@ -110,9 +110,28 @@
                 <button class="tool-button" data-action="capture"><span>◉</span> <b id="captureLabel">Share screen</b></button>
                 <button class="tool-button" data-action="control"><span>⌖</span> <b id="controlLabel">Request control</b></button>
                 <button class="tool-button controller-only" data-action="mobile-keyboard"><span>⌨</span> Mobile keyboard</button>
-                <button class="tool-button" data-action="copy-text"><span>□</span> Send clipboard</button>
+                <button class="tool-button" data-action="copy-text"><span>□</span> Clipboard</button>
                 <button class="tool-button" data-action="send-file"><span>⇧</span> Send file</button>
+                <button class="tool-button" data-action="remote-fullscreen"><span>⛶</span> Fullscreen</button>
+                <button class="tool-button" data-action="remote-mute"><span>◉</span> Mute</button>
                 <button class="tool-button danger" data-action="disconnect"><span>×</span> End session</button>
+              </div>
+              <div class="remote-media-controls">
+                <label for="remoteVolume">Remote audio</label>
+                <input id="remoteVolume" type="range" min="0" max="1" step="0.05" value="1" />
+                <span class="remote-media-hint">Audio is played through the remote video stream when the host provides it.</span>
+              </div>
+              <div class="device-controls hidden" id="androidControls">
+                <span class="device-controls-label">ANDROID DEVICE</span>
+                <button class="tool-button" data-android-action="back">Back</button>
+                <button class="tool-button" data-android-action="home">Home</button>
+                <button class="tool-button" data-android-action="recents">Recents</button>
+                <button class="tool-button" data-android-action="notifications">Notifications</button>
+                <button class="tool-button" data-android-action="quick_settings">Quick settings</button>
+                <button class="tool-button" data-android-action="power_dialog">Power</button>
+                <button class="tool-button" data-android-action="lock_screen">Lock</button>
+                <button class="tool-button" data-android-action="split_screen">Split screen</button>
+                <button class="tool-button" data-android-action="media_play_pause">Media</button>
               </div>
               <input id="fileInput" type="file" hidden />
               <div class="consent-banner hidden" id="consentBanner"><div><strong>Control requested</strong><p>This viewer wants to send mouse and keyboard commands.</p></div><div class="consent-actions"><button class="button small secondary" data-action="reject-control">Keep view-only</button><button class="button small primary" data-action="approve-control">Allow control</button></div></div>
@@ -152,8 +171,9 @@
                   <div class="file-offer hidden" id="fileOffer"><div><strong id="fileOfferName">Incoming file</strong><small id="fileOfferMeta"></small></div><div class="consent-actions"><button class="button small secondary" data-action="reject-file">Reject</button><button class="button small primary" data-action="accept-file">Accept</button><button class="button small primary hidden" data-action="save-file">Save</button></div></div>
                 </section>
                 <section class="module-card">
-                  <div class="module-head"><div><span class="mini-label">HOST AGENT</span><strong>OS input bridge</strong></div><span class="module-status" id="nativeStatus">OFFLINE</span></div>
-                  <p class="module-note" id="nativeMessage">Optional local agent for real PC mouse and keyboard control. The browser remains the consent boundary.</p>
+                  <div class="module-head"><div><span class="mini-label">REMOTE DEVICE</span><strong>Capabilities</strong></div><span class="module-status" id="nativeStatus">OFFLINE</span></div>
+                  <p class="module-note" id="nativeMessage">Connect a peer to see whether it is a browser host, native PC host, or Android host and which remote-desktop modules it exposes.</p>
+                  <div class="remote-device-details" id="remoteDeviceDetails">No device information received yet.</div>
                 </section>
               </div>
             </div>
