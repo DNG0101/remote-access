@@ -19,6 +19,8 @@ test("controller invite links are parsed by the client",()=>{
 
 test("host establishes the data connection before optional control",()=>{
   const rtc=read("webrtc.js");
+  assert.match(rtc,/peerIdForSessionCode/);
+  assert.match(rtc,/new PeerCtor\(requestedPeerId, peerOptions\)/);
   assert.match(rtc,/this\.peer\.on\("connection"/);
   assert.match(rtc,/connection\.on\("open"/);
   assert.match(rtc,/this\.emit\("state", "connected"\)/);
