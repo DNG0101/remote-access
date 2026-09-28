@@ -365,9 +365,21 @@ export function validateInputMessage(message) {
   }
 
   if (message.type === "mouse_button") {
+    const coordinatesAreValid =
+      message.x == null &&
+      message.y == null
+        ? true
+        : Number.isFinite(message.x) &&
+          Number.isFinite(message.y) &&
+          message.x >= 0 &&
+          message.x <= 1 &&
+          message.y >= 0 &&
+          message.y <= 1;
+
     return (
       ["left", "middle", "right"].includes(message.button) &&
-      ["down", "up", "double"].includes(message.action)
+      ["down", "up", "double"].includes(message.action) &&
+      coordinatesAreValid
     );
   }
 
