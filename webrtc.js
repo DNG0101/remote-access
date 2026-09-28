@@ -7,6 +7,12 @@ import {
 
 const EVENTS = ["state","ice","signaling","channel","track","stats","message","error"];
 
+export function peerIdForSessionCode(code) {
+  const normalized = String(code || "").replace(/\D/g, "").slice(0, 6);
+  if (normalized.length !== 6) throw new Error("Invalid session code.");
+  return "p2pdesk-" + normalized;
+}
+
 export class PeerSession extends EventTarget {
   constructor({ code, role, iceServers = [], targetPeerId = "", onLog = () => {} }) {
     super();
@@ -73,7 +79,8 @@ export class PeerSession extends EventTarget {
       };
 
       try {
-        this.peer = new PeerCtor(undefined, peerOptions);
+        const requestedPeerId = this.role === "host" ? peerIdForSessionCode(this.code) : undefined;
+        this.peer = new PeerCtor(requestedPeerId, peerOptions);
       } catch (error) {
         reject(error);
         return;
@@ -108,10 +115,7 @@ export class PeerSession extends EventTarget {
         }
 
         if (!this.targetPeerId) {
-          finish(reject, new Error(
-            "A cross-device join link is required. Open the host's invite link, or use two tabs on the same device."
-          ));
-          return;
+          this.targetPeerId = peerIdForSessionCode(this.code);
         }
 
         this.connectToHost();
@@ -123,6 +127,15 @@ export class PeerSession extends EventTarget {
           try { connection.close(); } catch {}
           return;
         }
+        if (connection.metadata?.code && connection.metadata.code !== this.code) {
+          try { connection.close(); } catch {}
+          return;
+        }
+        if (connection.metadata?.role && connection.metadata.role !== "controller") {
+          try { connection.close(); } catch {}
+          return;
+        }
+
         this.attachConnection(connection);
       });
 
@@ -133,6 +146,15 @@ export class PeerSession extends EventTarget {
         }
 
         if (this.remotePeerId && call.peer !== this.remotePeerId) {
+          try { call.close(); } catch {}
+          return;
+        }
+
+        if (call.metadata?.code && call.metadata.code !== this.code) {
+          try { call.close(); } catch {}
+          return;
+        }
+        if (call.metadata?.purpose && call.metadata.purpose !== "screen") {
           try { call.close(); } catch {}
           return;
         }
@@ -201,7 +223,7 @@ export class PeerSession extends EventTarget {
   describePeerError(error) {
     const type = error?.type;
     if (type === "peer-unavailable") {
-      return "The host invite is no longer active. Ask the host to create a new session.";
+      return "The host session is not active. Ask the host to create a new session.";
     }
     if (type === "network") {
       return "The signaling service could not be reached. Check the network connection.";
