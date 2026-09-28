@@ -512,6 +512,16 @@ public class RemoteAccessibilityService extends AccessibilityService {
             return globalBack();
         }
 
+        if (alt && "Tab".equals(code)) {
+            if (node != null) node.recycle();
+            return globalRecents();
+        }
+
+        if (meta && "KeyD".equals(code)) {
+            if (node != null) node.recycle();
+            return globalHome();
+        }
+
         if (node == null) return false;
 
         CharSequence value = node.getText();
@@ -531,16 +541,6 @@ public class RemoteAccessibilityService extends AccessibilityService {
 
         start = Math.min(start, text.length());
         end = Math.min(end, text.length());
-
-        if (alt && "Tab".equals(code)) {
-            if (node != null) node.recycle();
-            return globalRecents();
-        }
-
-        if (meta && "KeyD".equals(code)) {
-            if (node != null) node.recycle();
-            return globalHome();
-        }
 
         if (ctrl && "KeyA".equals(code)) {
             boolean result = setSelection(
