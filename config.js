@@ -6,6 +6,7 @@ window.P2P_DESK_CONFIG = {
   protocolVersion: "1.1.0",
   signalingUrl: signalFromUrl || "wss://wss.getlost.ovh",
   signalingMode: "wss-room-relay",
+  agentUrl: params.get("agent") || "ws://127.0.0.1:17878",
   iceServers: [
     { urls: ["stun:stun.l.google.com:19302"] }
   ],
