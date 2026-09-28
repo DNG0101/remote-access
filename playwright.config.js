@@ -9,6 +9,9 @@ export default defineConfig({
   use: {
     baseURL: "http://127.0.0.1:4173",
     headless: true,
+    launchOptions: {
+      args: ["--disable-features=WebRtcHideLocalIpsWithMdns"]
+    },
     trace: "retain-on-failure",
     video: "retain-on-failure"
   },
