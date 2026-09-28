@@ -83,6 +83,19 @@ export function validateSignalMessage(message) {
     return { ok: false, reason: "SIGNAL_NOT_OBJECT" };
   }
 
+  if (
+    message.sys === "roster" &&
+    typeof message.roomId === "string" &&
+    /^\d{6}$/.test(message.roomId) &&
+    Array.isArray(message.roster) &&
+    message.roster.every(validPeerId)
+  ) {
+    if (byteLength(JSON.stringify(message)) > MAX_SIGNAL_BYTES) {
+      return { ok: false, reason: "SIGNAL_TOO_LARGE" };
+    }
+    return { ok: true };
+  }
+
   if (message.server === true && message.kind === "error") {
     if (
       typeof message.codeName !== "string" ||
