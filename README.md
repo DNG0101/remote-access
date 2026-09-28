@@ -1,94 +1,85 @@
 # P2P Desk
 
-P2P Desk is a GitHub Pages-ready browser client for a consent-first remote support product. The public Pages build uses PeerJS Cloud for browser-to-browser signaling and WebRTC for the actual peer connection, while browser screen capture and control permissions remain explicit.
+P2P Desk is a GitHub Pages-ready browser remote-support client built around a direct WebRTC peer connection. The signaling service only introduces peers and relays SDP/ICE; screen media and data channels use the peer connection.
 
-## What is included
+## Current browser modules
 
-- Static deployment: `index.html`, `styles.css`, `app.js`, `webrtc.js`, `config.js`
-- Cross-device P2P sessions on the public GitHub Pages URL using PeerJS Cloud for signaling and WebRTC for media/data
-- Same-device testing still works in multiple tabs/windows
-- Browser screen sharing via `getDisplayMedia()`
-- Separate `control`, `input`, `clipboard`, `file-transfer`, `telemetry`, and `chat` channels
-- View-only by default, visible control approval, and host session termination
-- Diagnostics page with browser-observed connection state, ICE state, signaling state, channel state, and WebRTC stats
-- Architecture and security handoff notes in `docs/`
-- GitHub Pages workflow in `.github/workflows/pages.yml`
+The browser milestone implements these end-to-end modules:
 
-## Important boundary
+- Six-digit session creation and joining.
+- Native WebSocket signaling with direct peer targeting.
+- WebRTC SDP/ICE negotiation with candidate buffering and renegotiation.
+- Browser screen sharing through getDisplayMedia().
+- View-only sessions by default.
+- Explicit control request/approval/revocation messages.
+- Normalized mouse/keyboard input messages over the input channel.
+- User-initiated text clipboard transfer from controller to host browser.
+- Bidirectional chat over the chat data channel.
+- Bidirectional file transfer up to 25 MB using chunked, ordered WebRTC data-channel messages.
+- Capability discovery and lightweight telemetry.
+- Connection/ICE/data-channel diagnostics.
+- Explicit peer-leave propagation and teardown.
+- Browser E2E coverage for connection, screen delivery, control, clipboard, chat, bidirectional file transfer, and disconnect.
 
-This is not yet a production remote desktop product. A browser cannot move the OS cursor, type into arbitrary Windows applications, enumerate native file paths, or silently access the clipboard. The app does **not** pretend otherwise.
+## What the browser cannot do
 
-For real cross-device sessions, deploy:
+A normal browser page cannot move the Windows/macOS/Linux system cursor, type into arbitrary native applications, read arbitrary native filesystem paths, run native processes, bypass permission prompts, or provide a true Android system-level host without a native Android application.
 
-1. This static client on GitHub Pages.
-2. The built-in PeerJS Cloud broker for browser session discovery/signaling, or an optional self-hosted PeerServer when you need your own signaling boundary.
-3. A TURN service with short-lived credentials for restrictive networks.
-4. A visible, user-installed native host agent for Windows first. The agent must implement capture, OS input, permissions, clipboard, files, monitor metadata, and an emergency stop.
+The browser therefore sends validated input intents, but the host page does not pretend those intents are OS actions. OS control requires a separately installed native host agent.
 
-## Run locally
+## Architecture
 
-Because screen capture and WebRTC require a secure context, use `localhost` or HTTPS:
+GitHub Pages -> WSS signaling -> Host browser <-> Controller browser over WebRTC.
 
-```bash
-python3 -m http.server 8080
-```
+The signaling layer never proxies the screen stream or data-channel payloads.
 
-Open the site in a browser, create a Host session, and use **Copy invite link**. Open that invite link on the second device/browser. The six-digit code is a human-readable session reference; the invite link also carries the broker peer ID required to locate the host through PeerJS Cloud.
+## Configuration
 
-The host and controller establish a view-only WebRTC connection automatically. Screen sharing is a separate host action. Control requests happen only after the peer connection is established.
-
-PeerJS Cloud handles signaling/brokering; the media and data paths are WebRTC peer connections. PeerJS documents that the signaling server is used to broker the connection and that direct peer data does not pass through the signaling server (TURN can be used when NAT traversal requires it).
-
-## Deploy to GitHub Pages
-
-1. Create a GitHub repository and upload the contents of this ZIP at the repository root.
-2. In **Settings → Pages**, choose **GitHub Actions** as the source.
-3. The included workflow publishes the repository root.
-4. Visit the generated `https://<owner>.github.io/<repository>/` URL.
-
-No build step is required. `config.js` contains only public configuration. Do not commit TURN passwords, API keys, access tokens, or private credentials.
-
-## Configure signaling
-
-Edit `config.js`:
+Edit config.js:
 
 ```js
 window.P2P_DESK_CONFIG = {
   signalingUrl: "wss://signal.example.com",
   iceServers: [
     { urls: ["stun:stun.example.com:3478"] }
-    // TURN credentials must come from a short-lived credential endpoint.
-  ]
+  ],
+  sessionTtlMinutes: 30,
+  maxFileBytes: 25 * 1024 * 1024
 };
 ```
 
-The included client sends a small JSON message shape:
+For restrictive networks, configure a TURN service with short-lived credentials. Do not commit TURN passwords or private API credentials.
 
-```json
-{ "type": "join", "code": "123456", "role": "controller" }
-{ "type": "offer", "description": { "type": "offer", "sdp": "..." } }
-{ "type": "answer", "description": { "type": "answer", "sdp": "..." } }
-{ "type": "candidate", "candidate": { "...": "..." } }
+## Local development
+
+Serve the repository from localhost or HTTPS so browser media and WebRTC APIs are available:
+
+```bash
+python3 -m http.server 8080
 ```
 
-PeerJS Cloud is suitable for the prototype broker path; a production self-hosted broker still needs authentication, authorization, session expiration, rate limits, peer limits, message validation, and should never proxy screen or input traffic. See `docs/architecture.md`, `docs/protocol.md`, and `docs/security.md`.
+The automated E2E suite starts an isolated HTTP server plus a local WSS signaling server on ports 4173/4174.
 
-## Project status
+## GitHub Pages
 
-| Area | Status |
-|---|---|
-| Static web client | Included |
-| Two-tab WebRTC milestone | Included |
-| Browser screen capture | Included |
-| Consent and view-only default | Included |
-| Diagnostics | Included |
-| Public signaling/brokering | PeerJS Cloud enabled; optional self-hosted PeerServer/custom signaling supported |
-| TURN fallback | Configuration hook included; credentials/service required |
-| Windows OS control | Not included; requires native agent |
-| macOS/Linux agents | Not included |
-| Android native client/host | Not included |
-| Browser E2E suite | Playwright coverage added for browser connection/media/control lifecycle |
+1. Enable GitHub Pages for the repository.
+2. Publish the repository root.
+3. Open the generated HTTPS site.
+4. The client uses the configured WSS signaling endpoint.
 
-## Safety
+Invite links contain the six-digit room code and the configured signaling endpoint.
 
-The UI makes no claim that a browser has unrestricted operating-system access. Never use this package to bypass OS permission dialogs, install a hidden host, or access another person's screen without clear consent.
+## Native-agent boundary
+
+To turn this browser milestone into a full OS remote-desktop product, add signed native host components per platform:
+
+- Windows: capture, monitors, OS input, clipboard, filesystem operations, emergency stop.
+- macOS: Screen Recording and Accessibility permissions with equivalent controls.
+- Linux: desktop-environment-specific capture/input integration with explicit permissions.
+- Android: MediaProjection for screen capture and an AccessibilityService for user-approved input automation.
+
+Native components must authenticate to the session, enforce the same protocol validators, show a visible session indicator, and never execute arbitrary received files.
+
+## Security baseline
+
+View-only is the default. Control requires an explicit host decision. File offers require recipient approval. Clipboard transfer is user initiated. Session identifiers expire, signaling input is validated, data messages have size/freshness limits, and the signaling service is not used as a screen/data proxy.
