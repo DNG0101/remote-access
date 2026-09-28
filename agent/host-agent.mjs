@@ -15,7 +15,8 @@ const ALLOWED_ORIGINS = (process.env.P2P_DESK_AGENT_ORIGINS || "")
 
 function originAllowed(origin) {
   if (!ALLOWED_ORIGINS.length) {
-    return origin === "http://localhost" || origin === "http://127.0.0.1";
+    return /^https?:\/\/localhost(?::\d+)?$/.test(origin) ||
+      /^https?:\/\/127\.0\.0\.1(?::\d+)?$/.test(origin);
   }
 
   return ALLOWED_ORIGINS.includes(origin);
