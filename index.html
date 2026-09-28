@@ -96,14 +96,14 @@
             <div class="session-form hidden" id="controllerForm">
               <label class="field-label" for="joinCode">SESSION CODE</label>
               <div class="code-input-row"><input id="joinCode" class="code-input" inputmode="numeric" maxlength="7" placeholder="000 000" autocomplete="one-time-code" /><button class="button primary" data-action="join-code">Join</button></div>
-              <p class="field-hint">For the no-backend demo, open this URL in a second tab or window on the same origin.</p>
+              <p class="field-hint">For another PC or Android device, use the host's <strong>Copy invite link</strong>. A six-digit code alone cannot discover a browser on a different device.</p>
             </div>
           </div>
           <div class="panel live-panel">
             <div class="panel-head"><div><span class="mini-label">CURRENT SESSION</span><h3 id="sessionTitle">No active session</h3></div><span class="session-badge" id="sessionBadge">IDLE</span></div>
             <div class="empty-state" id="emptySession"><div class="empty-mark">⌁</div><h4>Nothing connected yet</h4><p>Create a host session, then join from a second tab to test the WebRTC path.</p></div>
             <div class="active-session hidden" id="activeSession">
-              <div class="session-code-block"><span class="mini-label">YOUR SESSION CODE</span><strong id="sessionCodeDisplay">000 000</strong><button class="copy-button" data-action="copy-code">Copy code</button></div>
+              <div class="session-code-block"><span class="mini-label">SESSION CODE</span><strong id="sessionCodeDisplay">000 000</strong><div class="session-code-actions"><button class="copy-button" data-action="copy-code">Copy code</button><button class="copy-button" data-action="copy-invite">Copy invite link</button></div></div>
               <div class="peer-row"><div class="avatar">?</div><div><strong id="peerLabel">Waiting for a peer</strong><small id="peerSubtext">Share the code to invite a viewer</small></div><span class="status-chip" id="peerStatus">WAITING</span></div>
               <div class="video-shell"><video id="remoteVideo" autoplay playsinline tabindex="0" aria-label="Remote screen"></video><div class="video-placeholder" id="videoPlaceholder"><span class="video-symbol">▣</span><strong id="videoTitle">Remote screen appears here</strong><small>When the host starts sharing</small></div><span class="video-label">REMOTE VIEW</span></div>
               <div class="session-tools">
@@ -141,6 +141,7 @@
     </main>
     <div class="toast-stack" id="toastStack" aria-live="polite"></div>
     <script src="config.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js"></script>
     <script type="module" src="app.js"></script>
   </body>
 </html>
