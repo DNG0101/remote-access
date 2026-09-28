@@ -2,6 +2,7 @@ package com.p2pdesk.android;
 
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.graphics.Point;
 import android.view.Display;
 import android.view.WindowManager;
@@ -61,6 +62,7 @@ public final class WebRtcHost {
     private final Map<String, DataChannel> channels =
         new HashMap<>();
     private boolean started;
+    private boolean capabilitiesSent;
 
     public WebRtcHost(
         Context context,
@@ -383,6 +385,14 @@ public final class WebRtcHost {
                         "_" +
                         channel.state().name()
                     );
+
+                    if (
+                        "telemetry".equals(channel.label()) &&
+                        channel.state() ==
+                            DataChannel.State.OPEN
+                    ) {
+                        sendCapabilities();
+                    }
                 }
 
                 @Override
@@ -419,6 +429,125 @@ public final class WebRtcHost {
                 }
             }
         );
+    }
+
+    private void sendCapabilities() {
+        if (capabilitiesSent) return;
+
+        boolean sent =
+            send(
+                "telemetry",
+                new JSONObject()
+                    .put("type", "capabilities")
+                    .put("screen", true)
+                    .put("dataChannels", true)
+                    .put("clipboard", true)
+                    .put("fileTransfer", true)
+                    .put("chat", true)
+                    .put("nativeInput", true)
+                    .put("androidHost", true)
+                    .put("touchGestures", true)
+                    .put("deviceActions", true)
+                    .put("microphone", false)
+            );
+
+        if (!sent) return;
+
+        capabilitiesSent = true;
+        sendDeviceInfo();
+    }
+
+    private void sendDeviceInfo() {
+        WindowManager manager =
+            (WindowManager)
+                context.getSystemService(
+                    Context.WINDOW_SERVICE
+                );
+        Display display = manager.getDefaultDisplay();
+
+        Point size = new Point();
+        display.getRealSize(size);
+
+        float density =
+            context.getResources()
+                .getDisplayMetrics()
+                .density;
+
+        float battery = -1f;
+
+        try {
+            Intent batteryIntent =
+                context.registerReceiver(
+                    null,
+                    new IntentFilter(
+                        Intent.ACTION_BATTERY_CHANGED
+                    )
+                );
+
+            if (batteryIntent != null) {
+                int level =
+                    batteryIntent.getIntExtra(
+                        android.os.BatteryManager.EXTRA_LEVEL,
+                        -1
+                    );
+                int scale =
+                    batteryIntent.getIntExtra(
+                        android.os.BatteryManager.EXTRA_SCALE,
+                        -1
+                    );
+
+                if (level >= 0 && scale > 0) {
+                    battery =
+                        100f * ((float) level / (float) scale);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+
+        JSONObject message =
+            new JSONObject()
+                .put(
+                    "type",
+                    "device_info"
+                )
+                .put(
+                    "at",
+                    System.currentTimeMillis()
+                )
+                .put(
+                    "manufacturer",
+                    android.os.Build.MANUFACTURER
+                )
+                .put(
+                    "model",
+                    android.os.Build.MODEL
+                )
+                .put(
+                    "sdk",
+                    android.os.Build.VERSION.SDK_INT
+                )
+                .put(
+                    "width",
+                    size.x
+                )
+                .put(
+                    "height",
+                    size.y
+                )
+                .put(
+                    "density",
+                    density
+                )
+                .put(
+                    "rotation",
+                    display.getRotation() / 90
+                );
+
+        if (battery >= 0f) {
+            message.put("battery", battery);
+        }
+
+        send("telemetry", message);
     }
 
     private void createOffer() {
