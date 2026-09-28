@@ -134,6 +134,18 @@ const linuxReadyPromise = process.platform === "linux"
 async function linuxInput(message) {
   if (!(await commandExists("xdotool"))) return false;
 
+  if (message.type === "text_input") {
+    await execFileAsync("xdotool", [
+      "type",
+      "--delay",
+      "1",
+      "--clearmodifiers",
+      "--",
+      message.text
+    ]);
+    return true;
+  }
+
   if (message.type === "mouse_move") {
     const geometry = await execFileAsync("xdotool", [
       "getdisplaygeometry"
