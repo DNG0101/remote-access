@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import fs from "node:fs/promises";
 
 test("two browser pages connect by code, deliver screen, grant/revoke control, and disconnect", async ({ browser }) => {
   const context = await browser.newContext();
@@ -101,6 +102,23 @@ test("two browser pages connect by code, deliver screen, grant/revoke control, a
   expect(download.suggestedFilename()).toBe("p2p-desk-test.txt");
   const downloadedPath = await download.path();
   expect(downloadedPath).toBeTruthy();
+  expect(await fs.readFile(downloadedPath, "utf8")).toBe("P2P DESK FILE TEST");
+
+  await controller.locator("#fileInput").setInputFiles({
+    name: "controller-upload.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("CONTROLLER FILE TEST")
+  });
+  await expect(host.locator("#fileOffer")).toBeVisible({ timeout: 10_000 });
+  await expect(host.locator("#fileOfferName")).toHaveText("controller-upload.txt");
+
+  const reverseDownloadPromise = host.waitForEvent("download");
+  await host.locator("[data-action='accept-file']").click();
+  const reverseDownload = await reverseDownloadPromise;
+  expect(reverseDownload.suggestedFilename()).toBe("controller-upload.txt");
+  const reversePath = await reverseDownload.path();
+  expect(reversePath).toBeTruthy();
+  expect(await fs.readFile(reversePath, "utf8")).toBe("CONTROLLER FILE TEST");
 
   await controller.locator("[data-action='control']").click();
   await expect(host.locator("#consentBanner")).toBeVisible({ timeout: 10_000 });
