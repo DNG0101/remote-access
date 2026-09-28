@@ -2,7 +2,9 @@ import { test, expect } from "@playwright/test";
 
 test("two browser pages connect by six-digit code, deliver screen, grant control, and disconnect", async ({ browser }) => {
   const context = await browser.newContext();
+  const browserErrors = [];
   const host = await context.newPage();
+  host.on("pageerror", (error) => browserErrors.push(error.message));
 
   await host.addInitScript(() => {
     navigator.mediaDevices.getDisplayMedia = async () => {
@@ -24,6 +26,7 @@ test("two browser pages connect by six-digit code, deliver screen, grant control
   await host.locator("[data-action='create-host']").first().click();
 
   await expect(host.locator("#diagSignaling")).toHaveText("connected", { timeout: 10_000 });
+  expect(browserErrors, browserErrors.join("\n")).toEqual([]);
   const code = (await host.locator("#sessionCodeDisplay").innerText()).replace(/\s/g, "");
   expect(code).toMatch(/^\d{6}$/);
 
