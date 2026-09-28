@@ -67,6 +67,13 @@ test("two browser pages connect by code, deliver screen, grant/revoke control, a
   });
 
   await controller.goto("/?signal=ws%3A%2F%2F127.0.0.1%3A4174#sessions");
+  await expect.poll(async () => controller.evaluate(() => JSON.stringify({
+    ready: Boolean(window.__P2P_DESK_READY__),
+    bootError: window.__P2P_DESK_BOOT_ERROR__,
+    hash: location.hash,
+    routeClass: document.querySelector("#route-sessions")?.className || ""
+  })), { timeout: 10_000 }).toBe('{"ready":true,"bootError":null,"hash":"#sessions","routeClass":"route"}');
+  await expect(controller.locator("#route-sessions")).toBeVisible();
   await controller.locator("[data-role='controller']").click();
   await controller.locator("#joinCode").fill(code);
   await controller.locator("[data-action='join-code']").click();

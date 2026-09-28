@@ -1505,8 +1505,24 @@ function bindEvents() {
   }, 5000);
 }
 
-bindEvents();
-navigate(state.route);
+window.__P2P_DESK_BOOT_ERROR__ = null;
+window.addEventListener("error", (event) => {
+  window.__P2P_DESK_BOOT_ERROR__ = event.error?.message || event.message || "Unknown browser error";
+});
+window.addEventListener("unhandledrejection", (event) => {
+  window.__P2P_DESK_BOOT_ERROR__ = event.reason?.message || String(event.reason || "Unhandled promise rejection");
+});
+
+try {
+  bindEvents();
+  navigate(state.route);
+  window.__P2P_DESK_READY__ = true;
+} catch (error) {
+  window.__P2P_DESK_READY__ = false;
+  window.__P2P_DESK_BOOT_ERROR__ = error?.message || String(error);
+  throw error;
+}
+
 const inviteParams = new URLSearchParams(location.search);
 const inviteCode = normalizeSessionCode(inviteParams.get("code") || "");
 if (inviteCode.length === 6) {
