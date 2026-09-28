@@ -23,11 +23,13 @@ public class MainActivity extends Activity {
     private static final int REQUEST_CAPTURE = 8201;
     private static final int REQUEST_SAVE = 8301;
     private static final int REQUEST_OPEN_FILE = 8302;
+    private static final int REQUEST_MICROPHONE = 8303;
 
     private EditText codeInput;
     private EditText signalingInput;
     private CheckBox controlCheckbox;
     private CheckBox clipboardCheckbox;
+    private CheckBox microphoneCheckbox;
     private TextView statusText;
     private TextView accessText;
     private TextView chatLog;
@@ -132,6 +134,13 @@ public class MainActivity extends Activity {
         );
         clipboardCheckbox.setChecked(false);
         root.addView(clipboardCheckbox);
+
+        microphoneCheckbox = new CheckBox(this);
+        microphoneCheckbox.setText(
+            "Share microphone audio with the PC"
+        );
+        microphoneCheckbox.setChecked(false);
+        root.addView(microphoneCheckbox);
 
         Button accessibilityButton =
             new Button(this);
@@ -336,6 +345,18 @@ public class MainActivity extends Activity {
             data
         );
 
+        if (requestCode == REQUEST_MICROPHONE) {
+            if (resultCode == RESULT_OK) {
+                requestCapture();
+            } else {
+                if (microphoneCheckbox != null) {
+                    microphoneCheckbox.setChecked(false);
+                }
+                requestCapture();
+            }
+            return;
+        }
+
         if (requestCode == REQUEST_CAPTURE) {
             if (
                 resultCode != RESULT_OK ||
@@ -455,6 +476,11 @@ public class MainActivity extends Activity {
                 .putExtra(
                     HostService.EXTRA_SHARE_CLIPBOARD,
                     clipboardCheckbox.isChecked()
+                )
+                .putExtra(
+                    HostService.EXTRA_SHARE_MICROPHONE,
+                    microphoneCheckbox != null &&
+                    microphoneCheckbox.isChecked()
                 );
 
         if (Build.VERSION.SDK_INT >= 26) {

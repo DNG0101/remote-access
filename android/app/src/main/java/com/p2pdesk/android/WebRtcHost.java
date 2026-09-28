@@ -50,12 +50,15 @@ public final class WebRtcHost {
     private final Context context;
     private final SignalingClient signaling;
     private final Listener listener;
+    private final boolean shareMicrophone;
 
     private PeerConnectionFactory factory;
     private EglBase eglBase;
     private SurfaceTextureHelper textureHelper;
     private VideoSource videoSource;
     private VideoTrack videoTrack;
+    private org.webrtc.AudioSource audioSource;
+    private org.webrtc.AudioTrack audioTrack;
     private ScreenCapturerAndroid screenCapturer;
     private PeerConnection peerConnection;
     private String remotePeerId;
@@ -67,11 +70,13 @@ public final class WebRtcHost {
     public WebRtcHost(
         Context context,
         SignalingClient signaling,
-        Listener listener
+        Listener listener,
+        boolean shareMicrophone
     ) {
         this.context = context.getApplicationContext();
         this.signaling = signaling;
         this.listener = listener;
+        this.shareMicrophone = shareMicrophone;
     }
 
     public void start(Intent projectionData) {
@@ -88,7 +93,7 @@ public final class WebRtcHost {
 
             eglBase = EglBase.create();
 
-            factory =
+            PeerConnectionFactory.Builder builder =
                 PeerConnectionFactory
                     .builder()
                     .setVideoEncoderFactory(
@@ -102,8 +107,24 @@ public final class WebRtcHost {
                         new DefaultVideoDecoderFactory(
                             eglBase.getEglBaseContext()
                         )
-                    )
-                    .createPeerConnectionFactory();
+                    );
+
+            factory = builder.createPeerConnectionFactory();
+
+            if (shareMicrophone) {
+                audioSource =
+                    factory.createAudioSource(
+                        new MediaConstraints()
+                    );
+
+                audioTrack =
+                    factory.createAudioTrack(
+                        "p2p-desk-microphone",
+                        audioSource
+                    );
+
+                audioTrack.setEnabled(true);
+            }
 
             startScreenCapture(projectionData);
             signaling.connect();
@@ -338,6 +359,13 @@ public final class WebRtcHost {
             );
         }
 
+        if (audioTrack != null) {
+            peerConnection.addTrack(
+                audioTrack,
+                Arrays.asList("audio")
+            );
+        }
+
         for (String channelName : CHANNELS) {
             DataChannel.Init init =
                 new DataChannel.Init();
@@ -446,7 +474,7 @@ public final class WebRtcHost {
                 .put("androidHost", true)
                 .put("touchGestures", true)
                 .put("deviceActions", true)
-                .put("microphone", false);
+                .put("microphone", shareMicrophone);
 
             if (!send("telemetry", message)) return;
 
@@ -777,6 +805,13 @@ public final class WebRtcHost {
         if (videoTrack != null) {
             videoTrack.dispose();
         }
+        if (audioTrack != null) {
+            audioTrack.setEnabled(false);
+            audioTrack.dispose();
+        }
+        if (audioSource != null) {
+            audioSource.dispose();
+        }
         if (factory != null) {
             factory.dispose();
         }
@@ -788,6 +823,8 @@ public final class WebRtcHost {
         textureHelper = null;
         videoSource = null;
         videoTrack = null;
+        audioSource = null;
+        audioTrack = null;
         factory = null;
         eglBase = null;
     }

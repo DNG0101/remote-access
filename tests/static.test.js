@@ -85,3 +85,7 @@ test("Android host source contains real native control modules", () => {
   assert.match(rtc, /androidHost/);
   assert.match(html, /data-android-action="back"/);
 });
+
+assert.match(read("android/app/src/main/AndroidManifest.xml"), /RECORD_AUDIO/);
+assert.match(read("android/app/src/main/java/com/p2pdesk/android/WebRtcHost.java"), /createAudioTrack/);
+assert.match(read("android/app/src/main/java/com/p2pdesk/android/HostService.java"), /FOREGROUND_SERVICE_TYPE_MICROPHONE/);

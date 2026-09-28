@@ -23,6 +23,7 @@ public class HostService extends Service
     public static final String EXTRA_PROJECTION = "projection_data";
     public static final String EXTRA_ALLOW_CONTROL = "allow_control";
     public static final String EXTRA_SHARE_CLIPBOARD = "share_clipboard";
+    public static final String EXTRA_SHARE_MICROPHONE = "share_microphone";
 
     private static final int NOTIFICATION_ID = 4101;
     private static final String CHANNEL_ID =
@@ -38,6 +39,7 @@ public class HostService extends Service
     private WebRtcHost host;
     private boolean allowControl;
     private boolean shareClipboard;
+    private boolean shareMicrophone;
 
     private volatile String status = "OFFLINE";
     private volatile String lastError = "";
@@ -133,6 +135,12 @@ public class HostService extends Service
                 false
             );
 
+        shareMicrophone =
+            intent.getBooleanExtra(
+                EXTRA_SHARE_MICROPHONE,
+                false
+            );
+
         if (code == null ||
             !code.matches("\\d{6}") ||
             signalingUrl == null ||
@@ -199,7 +207,8 @@ public class HostService extends Service
                 new WebRtcHost(
                     this,
                     signaling,
-                    this
+                    this,
+                    shareMicrophone
                 );
 
             host.start(projection);
@@ -279,7 +288,23 @@ public class HostService extends Service
         Notification notification =
             buildNotification();
 
-        if (Build.VERSION.SDK_INT >= 29) {
+        if (Build.VERSION.SDK_INT >= 30) {
+            int foregroundTypes =
+                android.content.pm.ServiceInfo
+                    .FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION;
+
+            if (shareMicrophone) {
+                foregroundTypes |=
+                    android.content.pm.ServiceInfo
+                        .FOREGROUND_SERVICE_TYPE_MICROPHONE;
+            }
+
+            startForeground(
+                NOTIFICATION_ID,
+                notification,
+                foregroundTypes
+            );
+        } else if (Build.VERSION.SDK_INT >= 29) {
             startForeground(
                 NOTIFICATION_ID,
                 notification,
