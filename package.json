@@ -1,13 +1,13 @@
 {
   "name": "p2p-desk",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.4.0",
   "type": "module",
   "scripts": {
     "test": "node --test tests/protocol.test.js tests/server.test.js tests/static.test.js",
     "test:protocol": "node --test tests/protocol.test.js",
     "start:signaling": "node server/signaling.js",
-    "check": "node --check app.js && node --check webrtc.js && node --check protocol.js && node --check server/signaling.js",
+    "check": "node --check app.js && node --check webrtc.js && node --check protocol.js && node --check agent-client.js && node --check server/signaling.js && node --check agent/host-agent.mjs",
     "test:e2e": "playwright test"
   },
   "dependencies": {
