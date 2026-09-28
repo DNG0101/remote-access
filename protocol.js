@@ -469,7 +469,8 @@ export function validateFileTransferMessage(message) {
       message.size <= MAX_FILE_BYTES &&
       Number.isInteger(message.totalChunks) &&
       message.totalChunks >= 1 &&
-      message.totalChunks <= 512
+      message.totalChunks <= 512 &&
+      message.totalChunks >= Math.ceil(message.size / MAX_FILE_CHUNK_BYTES)
     );
   }
 
