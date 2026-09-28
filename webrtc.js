@@ -727,14 +727,13 @@ export class PeerSession extends EventTarget {
   close() {
     if (this.closed) return;
 
-    this.closed = true;
-
     if (this.remotePeerId) {
       this.sendSignal({
         kind: "leave"
       }, this.remotePeerId, false);
     }
 
+    this.closed = true;
     this.closePeerConnection();
 
     try { this.signalingSocket?.close(); } catch {}
