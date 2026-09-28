@@ -1,20 +1,30 @@
 # Testing plan
 
-This package includes a runnable browser milestone, not a claim that the full 168-flow product test plan has passed.
+The current browser milestone has automated unit, integration, static, and Playwright E2E coverage.
 
-## Manual smoke test
+## Automated browser flow
 
-1. Serve the root over `localhost` or HTTPS.
-2. Open two same-origin tabs.
-3. Create a Host session and copy the code.
-4. Join as Controller from the second tab.
-5. Approve the viewer on the host.
-6. Confirm `connected`, ICE, signaling, and data-channel status in Diagnostics.
-7. Start browser screen sharing and confirm the remote video track arrives.
-8. Request control; approve and confirm the UI changes to full control.
-9. End the session from either side.
-10. Confirm the session closes and no screen remains visible.
+The Playwright flow verifies:
 
-## Before production
+1. Host session creation.
+2. Controller join by six-digit code.
+3. WSS signaling.
+4. WebRTC peer connection.
+5. Screen capture before peer join.
+6. Remote video track delivery.
+7. Bidirectional chat.
+8. Controller clipboard transfer to the host browser.
+9. Host-to-controller file transfer with download verification.
+10. Controller-to-host file transfer with download verification.
+11. Control request and host approval.
+12. Host control revocation.
+13. Explicit session disconnect and peer-side state update.
+14. No uncaught browser page errors.
 
-Add automated unit, integration, browser E2E, security, performance, mobile, and native-agent suites. Cover expiration, invalid sessions, replay, malformed messages, consent revocation, TURN relay, ICE restart, network changes, capture stop, permission denial, file restrictions, clipboard denial, mixed-DPI monitors, and host emergency stop.
+## Protocol coverage
+
+Node tests cover session-code generation, signaling envelopes, input freshness and bounds, control freshness, chat schema, file size/chunk constraints, telemetry/capability schemas, channel validation, signaling room membership, role conflicts, explicit leave propagation, queued data-channel messages, and roster discovery.
+
+## Production/native test expansion
+
+A complete native remote-desktop product still needs platform suites for TURN-only paths, ICE restart, network changes, sleep/wake, multiple monitors, mixed-DPI scaling, capture permission revocation, OS input permission denial, clipboard denial, interrupted/resumable file transfer, native-agent authentication, emergency stop, Windows, macOS, Linux, and Android host implementations.
