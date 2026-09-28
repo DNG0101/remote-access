@@ -89,3 +89,18 @@ test("Android host source contains real native control modules", () => {
 assert.match(read("android/app/src/main/AndroidManifest.xml"), /RECORD_AUDIO/);
 assert.match(read("android/app/src/main/java/com/p2pdesk/android/WebRtcHost.java"), /createAudioTrack/);
 assert.match(read("android/app/src/main/java/com/p2pdesk/android/HostService.java"), /FOREGROUND_SERVICE_TYPE_MICROPHONE/);
+
+test("remote desktop utility modules are wired into the controller", () => {
+  const app = read("app.js");
+  const html = read("index.html");
+  const protocol = read("protocol.js");
+
+  assert.match(app, /captureRemoteScreenshot/);
+  assert.match(app, /toggleRemoteRecording/);
+  assert.match(app, /remoteVideoPoint/);
+  assert.match(html, /data-action="screenshot-remote"/);
+  assert.match(html, /data-action="record-remote"/);
+  assert.match(html, /data-android-action="quick_settings"/);
+  assert.match(protocol, /android_action/);
+  assert.match(protocol, /device_info/);
+});

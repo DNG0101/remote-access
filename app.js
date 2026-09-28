@@ -1272,7 +1272,8 @@ function renderRemoteDeviceInfo() {
     caps?.deviceActions ? "System controls" : "",
     caps?.fileTransfer ? "Files" : "",
     caps?.clipboard ? "Clipboard" : "",
-    caps?.chat ? "Chat" : ""
+    caps?.chat ? "Chat" : "",
+    caps?.microphone ? "Microphone" : ""
   ].filter(Boolean);
 
   details.textContent = parts.join(" · ");
