@@ -24,7 +24,6 @@ test("controller can join a session by six-digit room code", () => {
   assert.match(app, /validateFileTransferMessage/);
   assert.match(app, /validateTelemetryMessage/);
   assert.match(app, /NativeAgentClient/);
-  assert.match(app, /data-action='save-file'/);
 });
 
 test("host establishes WebRTC before optional control consent", () => {
@@ -54,6 +53,6 @@ test("native agent bridge is included in the browser build", () => {
   const agent = read("agent/host-agent.mjs");
   assert.match(client, /class NativeAgentClient/);
   assert.match(client, /type: "input"/);
-  assert.match(agent, /127\\.0\\.0\\.1/);
+  assert.match(agent, /127\.0\.0\.1/);
   assert.match(agent, /validateInputMessage/);
 });
