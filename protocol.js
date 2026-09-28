@@ -83,6 +83,29 @@ export function validateSignalMessage(message) {
     return { ok: false, reason: "SIGNAL_NOT_OBJECT" };
   }
 
+  if (message.server === true && message.kind === "error") {
+    if (
+      typeof message.codeName !== "string" ||
+      message.codeName.length < 1 ||
+      message.codeName.length > 80
+    ) {
+      return { ok: false, reason: "SIGNAL_ERROR_CODE_INVALID" };
+    }
+
+    if (
+      message.message != null &&
+      (typeof message.message !== "string" || message.message.length > 500)
+    ) {
+      return { ok: false, reason: "SIGNAL_ERROR_MESSAGE_INVALID" };
+    }
+
+    if (byteLength(JSON.stringify(message)) > MAX_SIGNAL_BYTES) {
+      return { ok: false, reason: "SIGNAL_TOO_LARGE" };
+    }
+
+    return { ok: true };
+  }
+
   if (
     typeof message.roomId !== "string" ||
     !/^\d{6}$/.test(message.roomId)
