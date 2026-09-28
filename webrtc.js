@@ -343,6 +343,24 @@ export class PeerSession extends EventTarget {
 
   async handleSignal(message) {
     if (this.closed || !message || typeof message !== "object") return;
+
+    if (message.server === true && message.kind === "error") {
+      this.emit("error", {
+        code: message.codeName || "SIGNALING_SERVER_ERROR",
+        message: message.message || "The signaling server rejected the session."
+      });
+
+      if (
+        message.codeName === "SESSION_BUSY" ||
+        message.codeName === "ROLE_CONFLICT" ||
+        message.codeName === "NOT_JOINED"
+      ) {
+        this.remotePeerId = "";
+        this.remoteRole = "";
+      }
+      return;
+    }
+
     if (message.roomId !== this.code) return;
     if (message.from === this.peerId) return;
     if (message.to && message.to !== this.peerId) return;
