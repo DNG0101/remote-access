@@ -10,7 +10,28 @@ export const CHANNELS = Object.freeze([
 ]);
 
 const SIGNAL_KINDS = new Set(["offer", "answer", "candidate", "leave", "error"]);
-const INPUT_TYPES = new Set(["mouse_move", "mouse_button", "scroll", "keyboard", "text_input"]);
+const INPUT_TYPES = new Set([
+  "mouse_move",
+  "mouse_button",
+  "scroll",
+  "keyboard",
+  "text_input",
+  "android_action"
+]);
+
+const ANDROID_ACTIONS = new Set([
+  "back",
+  "home",
+  "recents",
+  "notifications",
+  "quick_settings",
+  "power_dialog",
+  "lock_screen",
+  "screenshot",
+  "split_screen",
+  "media_play_pause",
+  "menu"
+]);
 const CONTROL_TYPES = new Set([
   "control_request",
   "control_decision",
@@ -27,7 +48,7 @@ const FILE_TYPES = new Set([
   "file_complete"
 ]);
 const CHAT_TYPES = new Set(["chat_message"]);
-const TELEMETRY_TYPES = new Set(["capabilities", "stats"]);
+const TELEMETRY_TYPES = new Set(["capabilities", "stats", "device_info"]);
 
 const MAX_SIGNAL_BYTES = 256 * 1024;
 const MAX_CHANNEL_BYTES = 256 * 1024;
@@ -384,12 +405,28 @@ export function validateInputMessage(message) {
   }
 
   if (message.type === "scroll") {
+    const coordinatesAreValid =
+      message.x == null &&
+      message.y == null
+        ? true
+        : Number.isFinite(message.x) &&
+          Number.isFinite(message.y) &&
+          message.x >= 0 &&
+          message.x <= 1 &&
+          message.y >= 0 &&
+          message.y <= 1;
+
     return (
       Number.isFinite(message.deltaX) &&
       Number.isFinite(message.deltaY) &&
       Math.abs(message.deltaX) <= 10000 &&
-      Math.abs(message.deltaY) <= 10000
+      Math.abs(message.deltaY) <= 10000 &&
+      coordinatesAreValid
     );
+  }
+
+  if (message.type === "android_action") {
+    return ANDROID_ACTIONS.has(message.action);
   }
 
   return (
@@ -545,7 +582,33 @@ export function validateTelemetryMessage(message) {
       typeof message.clipboard === "boolean" &&
       typeof message.fileTransfer === "boolean" &&
       typeof message.chat === "boolean" &&
-      typeof message.nativeInput === "boolean"
+      typeof message.nativeInput === "boolean" &&
+      (message.androidHost == null || typeof message.androidHost === "boolean") &&
+      (message.touchGestures == null || typeof message.touchGestures === "boolean") &&
+      (message.deviceActions == null || typeof message.deviceActions === "boolean") &&
+      (message.microphone == null || typeof message.microphone === "boolean")
+    );
+  }
+
+  if (message.type === "device_info") {
+    return (
+      isRecentTimestamp(message.at, 60000) &&
+      typeof message.manufacturer === "string" &&
+      message.manufacturer.length <= 80 &&
+      typeof message.model === "string" &&
+      message.model.length <= 120 &&
+      Number.isInteger(message.sdk) &&
+      message.sdk >= 1 &&
+      message.sdk <= 100 &&
+      Number.isInteger(message.width) &&
+      message.width > 0 &&
+      message.width <= 10000 &&
+      Number.isInteger(message.height) &&
+      message.height > 0 &&
+      message.height <= 10000 &&
+      (message.density == null || (Number.isFinite(message.density) && message.density > 0 && message.density <= 1000)) &&
+      (message.battery == null || (Number.isFinite(message.battery) && message.battery >= 0 && message.battery <= 100)) &&
+      (message.rotation == null || [0, 1, 2, 3].includes(message.rotation))
     );
   }
 
