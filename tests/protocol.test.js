@@ -1,4 +1,18 @@
-import test from "node:test";import assert from "node:assert/strict";import { generateSessionCode, normalizeSessionCode, validateSignalMessage, validateInputMessage, validateControlMessage, validateDataChannelMessage, calculateBitrate } from "../protocol.js";\nimport { PeerSession } from "../webrtc.js";
+import test from "node:test";
+import assert from "node:assert/strict";
+import {
+  generateSessionCode,
+  normalizeSessionCode,
+  validateSignalMessage,
+  validateInputMessage,
+  validateControlMessage,
+  validateDataChannelMessage,
+  validateChatMessage,
+  validateFileTransferMessage,
+  validateTelemetryMessage,
+  calculateBitrate
+} from "../protocol.js";
+import { PeerSession } from "../webrtc.js";
 test("session codes are secure six-digit values",()=>{const c=generateSessionCode();assert.match(c,/^\d{6}$/);assert.equal(normalizeSessionCode("12a 34-5678"),"123456");});
 test("input validation rejects stale and out-of-range events",()=>{assert.equal(validateInputMessage({type:"mouse_move",timestamp:Date.now(),x:.5,y:.5,monitorId:"m1"}),true);assert.equal(validateInputMessage({type:"mouse_move",timestamp:Date.now(),x:1.2,y:.5,monitorId:"m1"}),false);assert.equal(validateInputMessage({type:"mouse_move",timestamp:Date.now()-300000,x:.5,y:.5,monitorId:"m1"}),false);});
 test("control requests require identity and freshness",()=>{const id="550e8400-e29b-41d4-a716-446655440000";assert.equal(validateControlMessage({type:"control_request",requestId:id,requestedAt:Date.now()}),true);assert.equal(validateControlMessage({type:"control_request",requestId:"bad",requestedAt:Date.now()}),false);assert.equal(validateControlMessage({type:"control_request",requestId:id,requestedAt:Date.now()-60000}),false);});
@@ -139,4 +153,69 @@ test("PeerSession discovers a peer from roster-style signaling", async () => {
       globalThis.MediaStream = previousMediaStream;
     }
   }
+});
+
+
+test("chat, file, and telemetry modules validate their live message shapes", () => {
+  const now = Date.now();
+
+  assert.equal(
+    validateChatMessage({
+      type: "chat_message",
+      messageId: "chat-123456",
+      text: "hello",
+      sentAt: now
+    }),
+    true
+  );
+
+  assert.equal(
+    validateFileTransferMessage({
+      type: "file_offer",
+      transferId: "file-123456",
+      name: "test.txt",
+      mime: "text/plain",
+      size: 12,
+      totalChunks: 1
+    }),
+    true
+  );
+
+  assert.equal(
+    validateFileTransferMessage({
+      type: "file_offer",
+      transferId: "file-123456",
+      name: "too-large.bin",
+      mime: "application/octet-stream",
+      size: 30 * 1024 * 1024,
+      totalChunks: 200
+    }),
+    false
+  );
+
+  assert.equal(
+    validateTelemetryMessage({
+      type: "capabilities",
+      screen: true,
+      dataChannels: true,
+      clipboard: true,
+      fileTransfer: true,
+      chat: true,
+      nativeInput: false
+    }),
+    true
+  );
+
+  assert.equal(
+    validateDataChannelMessage(
+      "chat",
+      JSON.stringify({
+        type: "chat_message",
+        messageId: "chat-789012",
+        text: "hello",
+        sentAt: now
+      })
+    ),
+    true
+  );
 });
