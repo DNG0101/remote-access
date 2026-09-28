@@ -15,9 +15,9 @@ const CONTROL_TYPES = new Set([
   "control_request",
   "control_decision",
   "control_revoked",
-  "capabilities",
-  "clipboard_text"
+  "capabilities"
 ]);
+const CLIPBOARD_TYPES = new Set(["clipboard_text"]);
 const FILE_TYPES = new Set([
   "file_offer",
   "file_accept",
@@ -445,6 +445,15 @@ export function validateControlMessage(message) {
   );
 }
 
+export function validateClipboardMessage(message) {
+  return (
+    isObject(message) &&
+    message.type === "clipboard_text" &&
+    typeof message.text === "string" &&
+    byteLength(message.text) <= MAX_CLIPBOARD_BYTES
+  );
+}
+
 export function validateChatMessage(message) {
   return (
     isObject(message) &&
@@ -556,8 +565,12 @@ export function validateDataChannelMessage(channel, message) {
     return validateInputMessage(parsed);
   }
 
-  if (channel === "control" || channel === "clipboard") {
+  if (channel === "control") {
     return validateControlMessage(parsed);
+  }
+
+  if (channel === "clipboard") {
+    return validateClipboardMessage(parsed);
   }
 
   if (channel === "chat") {
@@ -597,6 +610,7 @@ export function calculateBitrate(previous, current, at = Date.now()) {
 }
 
 export {
+  validateClipboardMessage,
   MAX_SIGNAL_BYTES,
   MAX_CHANNEL_BYTES,
   MAX_CLIPBOARD_BYTES,
