@@ -88,7 +88,7 @@ function resetSessionUi() {
   updateControlButton();
 }
 
-function createSession(role = "host", code = uid()) {
+function createSession(role = "host", code = uid(), targetPeerId = "") {
   if (state.session) {
     try { state.session.close(); } catch {}
   }
@@ -111,6 +111,7 @@ function createSession(role = "host", code = uid()) {
     code: state.code,
     role,
     iceServers: config.iceServers,
+    targetPeerId,
     onLog: (entry) => logEvent(entry.event, entry.detail)
   });
 
@@ -131,8 +132,8 @@ function createSession(role = "host", code = uid()) {
 
   state.session.connect().then(() => {
     logEvent("session_ready", { role, code: state.code, mode: state.session.signalingMode });
-    if (role === "controller" && !state.session.usingLocalSignaling) {
-      toast("Waiting for the host to answer.", "info");
+    if (role === "controller" && !state.session.targetPeerId) {
+      toast("Open the host invite link on this device to join.", "info");
     }
   }).catch((error) => {
     setConnection("failed", "red");
@@ -519,7 +520,7 @@ function bindEvents() {
   $("[data-action='join-code']").addEventListener("click", () => {
     const code = normalizeSessionCode($("#joinCode").value);
     if (code.length !== 6) {
-      toast("Enter the six-digit session code.", "error");
+      toast("Enter the six-digit session code, or open the host invite link.", "error");
       return;
     }
     createSession("controller", code);
@@ -536,6 +537,18 @@ function bindEvents() {
   $("[data-action='reject-control']").addEventListener("click", () => grantControl(false));
   $("[data-action='disconnect']").addEventListener("click", disconnect);
   $("[data-action='copy-code']").addEventListener("click", () => copy(state.code, "Session code"));
+  $("[data-action='copy-invite']").addEventListener("click", () => {
+    if (state.role !== "host") {
+      toast("Only the host can share the invite link.", "info");
+      return;
+    }
+    const url = state.session?.inviteUrl;
+    if (!url) {
+      toast("The secure session link is not ready yet. Please wait a moment.", "info");
+      return;
+    }
+    copy(url, "Invite link");
+  });
 
   $("[data-action='copy-text']").addEventListener("click", () => {
     if (state.role !== "controller" || !state.peerConnected) {
@@ -631,6 +644,18 @@ function bindEvents() {
 
 bindEvents();
 navigate(state.route);
+const inviteParams = new URLSearchParams(location.search);
+const invitePeerId = inviteParams.get("join") || "";
+const inviteCode = normalizeSessionCode(inviteParams.get("code") || "");
+if (invitePeerId && inviteCode.length === 6) {
+  setTimeout(() => {
+    navigate("sessions");
+    $("[data-role]").forEach((el) => el.classList.toggle("selected", el.dataset.role === "controller"));
+    $("#hostForm").classList.add("hidden");
+    $("#controllerForm").classList.remove("hidden");
+    createSession("controller", inviteCode, invitePeerId);
+  }, 0);
+}
 renderLogs();
 logEvent("client_ready", {
   protocol: config.protocolVersion || "1.1.0",
