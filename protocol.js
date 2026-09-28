@@ -10,7 +10,7 @@ export const CHANNELS = Object.freeze([
 ]);
 
 const SIGNAL_KINDS = new Set(["offer", "answer", "candidate", "leave", "error"]);
-const INPUT_TYPES = new Set(["mouse_move", "mouse_button", "scroll", "keyboard"]);
+const INPUT_TYPES = new Set(["mouse_move", "mouse_button", "scroll", "keyboard", "text_input"]);
 const CONTROL_TYPES = new Set([
   "control_request",
   "control_decision",
@@ -34,6 +34,7 @@ const MAX_CLIPBOARD_BYTES = 100 * 1024;
 const MAX_CHAT_BYTES = 8 * 1024;
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
 const MAX_FILE_CHUNK_BYTES = 160 * 1024;
+const MAX_TEXT_INPUT_BYTES = 8 * 1024;
 const MAX_PENDING_CANDIDATES = 64;
 const MAX_PENDING_MESSAGES = 20;
 
@@ -339,6 +340,15 @@ export function validateInputMessage(message) {
     return false;
   }
 
+  if (message.type === "text_input") {
+    return (
+      typeof message.text === "string" &&
+      message.text.length > 0 &&
+      message.text.length <= 4096 &&
+      byteLength(message.text) <= MAX_TEXT_INPUT_BYTES
+    );
+  }
+
   if (message.type === "mouse_move") {
     return (
       Number.isFinite(message.x) &&
@@ -593,6 +603,7 @@ export {
   MAX_CHAT_BYTES,
   MAX_FILE_BYTES,
   MAX_FILE_CHUNK_BYTES,
+  MAX_TEXT_INPUT_BYTES,
   MAX_PENDING_CANDIDATES,
   MAX_PENDING_MESSAGES
 };
