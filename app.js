@@ -985,8 +985,8 @@ async function refreshStats() {
       route: stats.route
     };
 
-    if (state.session?.peerConnected !== false && validateTelemetryMessage(telemetry)) {
-      state.session.send("telemetry", telemetry);
+    if (state.peerConnected && validateTelemetryMessage(telemetry)) {
+      state.session?.send("telemetry", telemetry);
     }
   } catch (error) {
     logEvent("stats_failed", { reason: error.message }, "error");
