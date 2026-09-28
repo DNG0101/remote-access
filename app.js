@@ -798,6 +798,15 @@ function wireSession(session) {
         logEvent("control_revoked_received", {});
       }
 
+      if (message.type === "screen_stopped" && state.role === "controller") {
+        const video = $("#remoteVideo");
+        video.srcObject = null;
+        video.classList.remove("show");
+        $("#videoPlaceholder").classList.remove("hidden");
+        $("#videoTitle").textContent = "Remote screen appears here";
+        logEvent("remote_screen_stopped", {});
+      }
+
       return;
     }
 

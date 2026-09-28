@@ -15,7 +15,8 @@ const CONTROL_TYPES = new Set([
   "control_request",
   "control_decision",
   "control_revoked",
-  "capabilities"
+  "capabilities",
+  "screen_stopped"
 ]);
 const CLIPBOARD_TYPES = new Set(["clipboard_text"]);
 const FILE_TYPES = new Set([
@@ -439,10 +440,11 @@ export function validateControlMessage(message) {
     );
   }
 
-  return (
-    typeof message.text === "string" &&
-    byteLength(message.text) <= MAX_CLIPBOARD_BYTES
-  );
+  if (message.type === "screen_stopped") {
+    return true;
+  }
+
+  return false;
 }
 
 export function validateClipboardMessage(message) {

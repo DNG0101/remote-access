@@ -972,11 +972,8 @@ export class PeerSession extends EventTarget {
 
     this.localStream = null;
 
-    this.emit("message", {
-      channel: "system",
-      data: JSON.stringify({
-        type: "screen_stopped"
-      })
+    this.send("control", {
+      type: "screen_stopped"
     });
   }
 
