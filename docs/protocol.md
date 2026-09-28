@@ -1,49 +1,56 @@
 # Protocol notes
 
-Protocol version: `1.0.0`
+Protocol version: 1.1.0.
 
-## WebRTC logical channels
+## Session signaling
+
+Browser and included signaling server use JSON envelopes with roomId, from, optional to, sentAt, announce and kind.
+
+Supported signaling kinds are offer, answer, candidate, leave and error. Some public relay deployments return a roster discovery message:
+
+```json
+{"sys":"roster","roomId":"123456","roster":["peer-a","peer-b"]}
+```
+
+The browser accepts both direct announcements and roster discovery.
+
+## WebRTC channels
 
 | Channel | Ordering | Purpose |
 |---|---|---|
-| `control` | ordered | consent, session lifecycle, capability messages |
-| `input` | unordered/low-latency intent | normalized pointer and keyboard events |
-| `clipboard` | ordered | user-approved text clipboard messages |
-| `file-transfer` | ordered | chunk metadata and explicitly approved file bytes |
-| `telemetry` | ordered | connection measurements and capability status |
-| `chat` | ordered | session messages |
+| control | ordered | consent and permission decisions |
+| input | unordered | normalized mouse/keyboard intents |
+| clipboard | ordered | user-initiated text transfer |
+| file-transfer | ordered | explicit file offers, accepts, chunks and completion |
+| telemetry | ordered | capabilities and connection information |
+| chat | ordered | session text messages |
 
-## Input examples
-
-```json
-{
-  "type": "mouse_move",
-  "timestamp": 1730000000000,
-  "x": 0.45,
-  "y": 0.72,
-  "monitorId": "monitor-1"
-}
-```
+## Chat
 
 ```json
-{
-  "type": "keyboard",
-  "key": "Enter",
-  "action": "down",
-  "modifiers": ["CTRL"]
-}
+{"type":"chat_message","messageId":"chat-123456","text":"hello","sentAt":1730000000000}
 ```
 
-Every native agent must validate message type, size, timestamp freshness, permission state, rate, coordinate range, monitor identity, and control grant before acting.
+## File transfer
 
-## Capability negotiation
+Sender sends file_offer. Recipient explicitly accepts or rejects it. Accepted files are transferred as base64-encoded chunks in this browser milestone, limited to 25 MB.
 
-Each peer should announce protocol version, client version, host-agent version, and capabilities. Unsupported features must be disabled rather than simulated.
+```json
+{"type":"file_offer","transferId":"file-123456","name":"report.pdf","mime":"application/pdf","size":123456,"totalChunks":1}
+```
 
-## State model
+Production native agents should use streaming/binary data channels instead of large in-memory base64 buffers.
 
-The product state model is:
+## Capabilities
 
-`IDLE → CREATING → WAITING → JOINING → SIGNALING → CONNECTING → AUTHENTICATING → WAITING_FOR_CONSENT → VIEW_ONLY → FULL_CONTROL → CLOSED`
+```json
+{"type":"capabilities","screen":true,"dataChannels":true,"clipboard":true,"fileTransfer":true,"chat":true,"nativeInput":false}
+```
 
-Recoverable transport states include `RECONNECTING`; terminal states include `DISCONNECTED`, `EXPIRED`, `FAILED`, and `CLOSED`.
+Unsupported features must be reported as unsupported rather than simulated.
+
+## Input
+
+Pointer coordinates are normalized to 0..1. Keyboard events carry key, code, action and modifiers. Every input event has a recent timestamp.
+
+The browser milestone validates and transports these events but does not inject them into the operating system. A native host agent is required for OS-level mouse and keyboard control.
