@@ -434,120 +434,119 @@ public final class WebRtcHost {
     private void sendCapabilities() {
         if (capabilitiesSent) return;
 
-        boolean sent =
-            send(
-                "telemetry",
-                new JSONObject()
-                    .put("type", "capabilities")
-                    .put("screen", true)
-                    .put("dataChannels", true)
-                    .put("clipboard", true)
-                    .put("fileTransfer", true)
-                    .put("chat", true)
-                    .put("nativeInput", true)
-                    .put("androidHost", true)
-                    .put("touchGestures", true)
-                    .put("deviceActions", true)
-                    .put("microphone", false)
+        try {
+            JSONObject message = new JSONObject()
+                .put("type", "capabilities")
+                .put("screen", true)
+                .put("dataChannels", true)
+                .put("clipboard", true)
+                .put("fileTransfer", true)
+                .put("chat", true)
+                .put("nativeInput", true)
+                .put("androidHost", true)
+                .put("touchGestures", true)
+                .put("deviceActions", true)
+                .put("microphone", false);
+
+            if (!send("telemetry", message)) return;
+
+            capabilitiesSent = true;
+            sendDeviceInfo();
+        } catch (Exception error) {
+            listener.onError(
+                "Android capability negotiation failed: " +
+                error.getMessage()
             );
-
-        if (!sent) return;
-
-        capabilitiesSent = true;
-        sendDeviceInfo();
+        }
     }
 
     private void sendDeviceInfo() {
-        WindowManager manager =
-            (WindowManager)
-                context.getSystemService(
-                    Context.WINDOW_SERVICE
-                );
-        Display display = manager.getDefaultDisplay();
-
-        Point size = new Point();
-        display.getRealSize(size);
-
-        float density =
-            context.getResources()
-                .getDisplayMetrics()
-                .density;
-
-        float battery = -1f;
-
         try {
-            Intent batteryIntent =
-                context.registerReceiver(
-                    null,
-                    new IntentFilter(
-                        Intent.ACTION_BATTERY_CHANGED
-                    )
-                );
-
-            if (batteryIntent != null) {
-                int level =
-                    batteryIntent.getIntExtra(
-                        android.os.BatteryManager.EXTRA_LEVEL,
-                        -1
-                    );
-                int scale =
-                    batteryIntent.getIntExtra(
-                        android.os.BatteryManager.EXTRA_SCALE,
-                        -1
+            WindowManager manager =
+                (WindowManager)
+                    context.getSystemService(
+                        Context.WINDOW_SERVICE
                     );
 
-                if (level >= 0 && scale > 0) {
-                    battery =
-                        100f * ((float) level / (float) scale);
+            Display display =
+                manager.getDefaultDisplay();
+
+            Point size = new Point();
+            display.getRealSize(size);
+
+            float density =
+                context.getResources()
+                    .getDisplayMetrics()
+                    .density;
+
+            float battery = -1f;
+
+            try {
+                Intent batteryIntent =
+                    context.registerReceiver(
+                        null,
+                        new IntentFilter(
+                            Intent.ACTION_BATTERY_CHANGED
+                        )
+                    );
+
+                if (batteryIntent != null) {
+                    int level =
+                        batteryIntent.getIntExtra(
+                            android.os.BatteryManager.EXTRA_LEVEL,
+                            -1
+                        );
+
+                    int scale =
+                        batteryIntent.getIntExtra(
+                            android.os.BatteryManager.EXTRA_SCALE,
+                            -1
+                        );
+
+                    if (level >= 0 && scale > 0) {
+                        battery =
+                            100f *
+                            ((float) level / (float) scale);
+                    }
                 }
+            } catch (Exception ignored) {
             }
-        } catch (Exception ignored) {
+
+            JSONObject message =
+                new JSONObject()
+                    .put("type", "device_info")
+                    .put("at", System.currentTimeMillis())
+                    .put(
+                        "manufacturer",
+                        android.os.Build.MANUFACTURER
+                    )
+                    .put(
+                        "model",
+                        android.os.Build.MODEL
+                    )
+                    .put(
+                        "sdk",
+                        android.os.Build.VERSION.SDK_INT
+                    )
+                    .put("width", size.x)
+                    .put("height", size.y)
+                    .put("density", density)
+                    .put(
+                        "rotation",
+                        display.getRotation() / 90
+                    );
+
+            if (battery >= 0f) {
+                message.put("battery", battery);
+            }
+
+            send("telemetry", message);
+        } catch (Exception error) {
+            listener.onError(
+                "Android device telemetry failed: " +
+                error.getMessage()
+            );
         }
-
-        JSONObject message =
-            new JSONObject()
-                .put(
-                    "type",
-                    "device_info"
-                )
-                .put(
-                    "at",
-                    System.currentTimeMillis()
-                )
-                .put(
-                    "manufacturer",
-                    android.os.Build.MANUFACTURER
-                )
-                .put(
-                    "model",
-                    android.os.Build.MODEL
-                )
-                .put(
-                    "sdk",
-                    android.os.Build.VERSION.SDK_INT
-                )
-                .put(
-                    "width",
-                    size.x
-                )
-                .put(
-                    "height",
-                    size.y
-                )
-                .put(
-                    "density",
-                    density
-                )
-                .put(
-                    "rotation",
-                    display.getRotation() / 90
-                );
-
-        if (battery >= 0f) {
-            message.put("battery", battery);
-        }
-
-        send("telemetry", message);
     }
 
     private void createOffer() {
