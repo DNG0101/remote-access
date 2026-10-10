@@ -145,6 +145,28 @@ function Get-VirtualKey([string]$code) {
         ArrowLeft = [System.Windows.Forms.Keys]::Left
         ArrowRight = [System.Windows.Forms.Keys]::Right
         Space = [System.Windows.Forms.Keys]::Space
+        CapsLock = [System.Windows.Forms.Keys]::Capital
+        NumLock = [System.Windows.Forms.Keys]::NumLock
+        ScrollLock = [System.Windows.Forms.Keys]::Scroll
+        PrintScreen = [System.Windows.Forms.Keys]::PrintScreen
+        Pause = [System.Windows.Forms.Keys]::Pause
+        ContextMenu = [System.Windows.Forms.Keys]::Apps
+        NumpadAdd = [System.Windows.Forms.Keys]::Add
+        NumpadSubtract = [System.Windows.Forms.Keys]::Subtract
+        NumpadMultiply = [System.Windows.Forms.Keys]::Multiply
+        NumpadDivide = [System.Windows.Forms.Keys]::Divide
+        NumpadDecimal = [System.Windows.Forms.Keys]::Decimal
+        Comma = [System.Windows.Forms.Keys]::Oemcomma
+        Period = [System.Windows.Forms.Keys]::OemPeriod
+        Slash = [System.Windows.Forms.Keys]::Oem2
+        Semicolon = [System.Windows.Forms.Keys]::Oem1
+        Quote = [System.Windows.Forms.Keys]::Oem7
+        BracketLeft = [System.Windows.Forms.Keys]::Oem4
+        BracketRight = [System.Windows.Forms.Keys]::Oem6
+        Backslash = [System.Windows.Forms.Keys]::Oem5
+        Minus = [System.Windows.Forms.Keys]::OemMinus
+        Equal = [System.Windows.Forms.Keys]::Oemplus
+        Backquote = [System.Windows.Forms.Keys]::Oemtilde
         F1 = [System.Windows.Forms.Keys]::F1
         F2 = [System.Windows.Forms.Keys]::F2
         F3 = [System.Windows.Forms.Keys]::F3
@@ -169,6 +191,10 @@ function Get-VirtualKey([string]$code) {
 
     if ($map.ContainsKey($code)) {
         return [int]$map[$code]
+    }
+
+    if ($code -match '^Numpad([0-9])$') {
+        return [int]([System.Windows.Forms.Keys]::NumPad0 + [int]$Matches[1])
     }
 
     return 0

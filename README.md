@@ -48,7 +48,8 @@ window.P2P_DESK_CONFIG = {
   maxFileChunks: 16384,
   fileChunkBytes: 256 * 1024,
   fileBufferedAmount: 4 * 1024 * 1024,
-  fileTransferTimeoutMs: 30 * 1000
+  fileTransferTimeoutMs: 30 * 1000,
+  fileStreamingThresholdBytes: 32 * 1024 * 1024
 };
 ```
 

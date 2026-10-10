@@ -31,6 +31,10 @@ test("controller can join a session by six-digit room code", () => {
   assert.match(app, /showSaveFilePicker/);
   assert.match(app, /file_cancel/);
   assert.match(app, /NativeAgentClient/);
+  assert.match(app, /activePointerButtons/);
+  assert.match(app, /setPointerCapture/);
+  assert.match(app, /window\.addEventListener\("keydown"/);
+  assert.match(app, /window\.addEventListener\("keyup"/);
   assert.match(app, /data-action='mobile-keyboard'/);
   assert.match(app, /type: "text_input"/);
   assert.match(app, /remote_screen_stopped/);
@@ -64,10 +68,15 @@ test("public client is configured for a WSS signaling endpoint", () => {
 test("native agent bridge is included in the browser build", () => {
   const client = read("agent-client.js");
   const agent = read("agent/host-agent.mjs");
+  const windowsInput = read("agent/windows-input.ps1");
   assert.match(client, /class NativeAgentClient/);
   assert.match(client, /type: "input"/);
   assert.match(agent, /127\.0\.0\.1/);
   assert.match(agent, /validateInputMessage/);
+  assert.match(agent, /Caps_Lock/);
+  assert.match(agent, /KP_Add/);
+  assert.match(windowsInput, /Oemcomma/);
+  assert.match(windowsInput, /NumpadAdd/);
 });
 
 

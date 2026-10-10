@@ -846,10 +846,8 @@ export class PeerSession extends EventTarget {
     };
 
     channel.onmessage = (event) => {
-      if (channel.label === "file-transfer" &&
-          (event.data instanceof ArrayBuffer ||
-            ArrayBuffer.isView(event.data))) {
-        const frame = decodeFileBinaryFrame(event.data);
+      const emitBinaryFrame = (value) => {
+        const frame = decodeFileBinaryFrame(value);
         if (!frame.ok) {
           this.emit("error", {
             code: "INVALID_FILE_FRAME",
@@ -862,6 +860,26 @@ export class PeerSession extends EventTarget {
           data: frame,
           binary: true
         });
+      };
+
+      if (channel.label === "file-transfer" &&
+          (event.data instanceof ArrayBuffer ||
+            ArrayBuffer.isView(event.data))) {
+        emitBinaryFrame(event.data);
+        return;
+      }
+
+      if (channel.label === "file-transfer" &&
+          typeof Blob !== "undefined" &&
+          event.data instanceof Blob) {
+        void event.data.arrayBuffer()
+          .then((value) => emitBinaryFrame(value))
+          .catch(() => {
+            this.emit("error", {
+              code: "INVALID_FILE_FRAME",
+              message: "A binary file frame could not be read."
+            });
+          });
         return;
       }
 

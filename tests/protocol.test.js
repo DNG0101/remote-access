@@ -351,3 +351,59 @@ test("Android remote-desktop input modules validate", () => {
     false
   );
 });
+
+test("keyboard and pointer input combinations validate consistently", () => {
+  const timestamp = Date.now();
+  for (const action of ["down", "up"]) {
+    for (const code of ["KeyA", "Enter", "ArrowLeft", "ControlLeft", "F12"]) {
+      assert.equal(
+        validateInputMessage({
+          type: "keyboard",
+          key: code === "KeyA" ? "a" : code,
+          code,
+          action,
+          modifiers: action === "down" && code === "KeyA" ? ["CTRL", "SHIFT"] : [],
+          timestamp
+        }),
+        true
+      );
+    }
+  }
+
+  for (const button of ["left", "middle", "right"]) {
+    for (const action of ["down", "up", "double"]) {
+      assert.equal(
+        validateInputMessage({
+          type: "mouse_button",
+          button,
+          action,
+          x: 0.5,
+          y: 0.5,
+          timestamp
+        }),
+        true
+      );
+    }
+  }
+
+  assert.equal(
+    validateInputMessage({
+      type: "mouse_button",
+      button: "left",
+      action: "up",
+      timestamp
+    }),
+    true
+  );
+  assert.equal(
+    validateInputMessage({
+      type: "keyboard",
+      key: "a",
+      code: "KeyA",
+      action: "down",
+      modifiers: ["CTRL", "CTRL"],
+      timestamp
+    }),
+    false
+  );
+});

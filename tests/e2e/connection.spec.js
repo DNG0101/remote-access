@@ -163,6 +163,37 @@ test("two browser pages connect by code, deliver screen, grant/revoke control, a
   await expect(controller.locator("#peerSubtext")).toContainText("Full control granted", { timeout: 10_000 });
   await expect(host.locator("#nativeStatus")).toHaveText("CONNECTED", { timeout: 10_000 });
 
+  await controller.locator("#remoteVideo").focus();
+  await controller.keyboard.press("a");
+  await controller.locator("#remoteVideo").click({
+    position: { x: 320, y: 180 },
+    button: "right"
+  });
+  await expect.poll(async () => {
+    const response = await host.evaluate(() => fetch("/agent-events").then((r) => r.json()));
+    const inputs = response.inputs;
+    return inputs.some((packet) =>
+      packet?.type === "keyboard" &&
+      packet?.code === "KeyA" &&
+      packet?.action === "down"
+    ) &&
+      inputs.some((packet) =>
+        packet?.type === "keyboard" &&
+        packet?.code === "KeyA" &&
+        packet?.action === "up"
+      ) &&
+      inputs.some((packet) =>
+        packet?.type === "mouse_button" &&
+        packet?.button === "right" &&
+        packet?.action === "down"
+      ) &&
+      inputs.some((packet) =>
+        packet?.type === "mouse_button" &&
+        packet?.button === "right" &&
+        packet?.action === "up"
+      );
+  }).toBe(true);
+
   await controller.locator("#remoteVideo").hover({ position: { x: 320, y: 180 } });
   await controller.locator("#remoteVideo").click({
     position: { x: 320, y: 180 },

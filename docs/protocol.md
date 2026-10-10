@@ -43,7 +43,7 @@ Binary mode keeps control messages as JSON and sends each file chunk as a binary
 
 Senders respect `bufferedAmount` backpressure and fail on channel stalls, close, cancellation, malformed frames, or timeout. Browser receivers use the File System Access API when available to stream directly to a user-selected destination; otherwise chunks are retained only as bounded binary parts until the user saves the completed file. Zero-byte files use zero chunks and still require completion.
 
-The browser defaults are a 2 GiB file limit, 16,384 chunks, 256 KiB binary chunks, 4 MiB buffered-channel high water mark, and 30 second stall timeout. These are configuration limits, not unlimited-capacity claims. Android remains capped at its advertised 25 MiB Base64 compatibility limit until its native receiver is migrated to the binary frame helper.
+The browser defaults are a 2 GiB file limit, 16,384 chunks, 256 KiB binary chunks, 4 MiB buffered-channel high water mark, 30 second stall timeout, and a 32 MiB threshold before offering direct-to-disk saving. These are configuration limits, not unlimited-capacity claims. Android remains capped at its advertised 25 MiB Base64 compatibility limit until its native receiver is migrated to the binary frame helper.
 
 ## Capabilities
 

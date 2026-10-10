@@ -39,7 +39,9 @@ const state = {
   nativeAgentWarned: false,
   peerDeviceInfo: null,
   remoteRecorder: null,
-  remoteRecordingParts: []
+  remoteRecordingParts: [],
+  activePointerButtons: new Map(),
+  pressedKeys: new Set()
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -145,6 +147,8 @@ function resetModules() {
   if (previousIncoming?.timeout) clearTimeout(previousIncoming.timeout);
   state.incomingFile = null;
   state.outgoingFile = null;
+  state.activePointerButtons.clear();
+  state.pressedKeys.clear();
   state.peerCapabilities = null;
   state.peerDeviceInfo = null;
   state.incomingClipboard = null;
@@ -375,6 +379,7 @@ function showFileOffer(message) {
     mode: message.mode || "base64",
     sink: null,
     writeChain: Promise.resolve(),
+    receiveChain: Promise.resolve(),
     nextWriteIndex: 0,
     lastProgressAt: Date.now(),
     accepted: false
@@ -405,7 +410,12 @@ async function acceptFile() {
     return;
   }
 
-  if (typeof window.showSaveFilePicker === "function") {
+  const streamingThreshold =
+    Number(config.fileStreamingThresholdBytes) || 32 * 1024 * 1024;
+  if (
+    incoming.size >= streamingThreshold &&
+    typeof window.showSaveFilePicker === "function"
+  ) {
     try {
       const handle = await window.showSaveFilePicker({
         suggestedName: sanitizeFilename(incoming.name)
@@ -869,7 +879,14 @@ function wireSession(session) {
 
   session.on("message", ({ channel, data }) => {
     if (channel === "file-transfer" && data?.ok && data?.binary !== false) {
-      void handleIncomingBinaryFile(data);
+      const incoming = state.incomingFile;
+      if (incoming?.id === data.transferId) {
+        incoming.receiveChain = incoming.receiveChain
+          .then(() => handleIncomingBinaryFile(data))
+          .catch((error) => {
+            failIncomingFile(error?.message || "The binary file could not be received.");
+          });
+      }
       return;
     }
 
@@ -1158,7 +1175,10 @@ function wireSession(session) {
       }
 
       if (message.type === "file_complete") {
-        void completeIncomingFile();
+        const incoming = state.incomingFile;
+        if (incoming?.id === message.transferId) {
+          void incoming.receiveChain.then(() => completeIncomingFile());
+        }
       }
       return;
     }
@@ -1421,6 +1441,111 @@ function handlePointer(event) {
 
   if (validateInputMessage(message)) state.session.send("input", message);
   state.lastPointerSend = now;
+}
+
+function pointerButton(event) {
+  return event.button === 2
+    ? "right"
+    : event.button === 1
+      ? "middle"
+      : "left";
+}
+
+function sendPointerButton(event, action, point = null, button = pointerButton(event)) {
+  if (
+    state.role !== "controller" ||
+    !state.controlGranted ||
+    !state.session ||
+    !state.peerConnected
+  ) {
+    return false;
+  }
+
+  const message = {
+    type: "mouse_button",
+    button,
+    action,
+    timestamp: Date.now()
+  };
+
+  if (point?.inside) {
+    message.x = point.x;
+    message.y = point.y;
+  }
+
+  return sendInput(message);
+}
+
+function handleRemoteKey(event, action) {
+  if (
+    state.role !== "controller" ||
+    !state.controlGranted ||
+    !state.session ||
+    state.activePointerButtons.size > 0
+  ) {
+    return;
+  }
+
+  const target = event.target;
+  if (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target?.isContentEditable
+  ) {
+    return;
+  }
+
+  const modifiers = modifierNames(event);
+  const android = Boolean(state.peerCapabilities?.androidHost);
+  if (action === "up" && state.pressedKeys.has(event.code)) {
+    state.pressedKeys.delete(event.code);
+  } else if (action === "down") {
+    if (state.pressedKeys.has(event.code) && !event.repeat) return;
+    state.pressedKeys.add(event.code);
+  }
+
+  if (
+    android &&
+    action === "up" &&
+    !event.isComposing &&
+    modifiers.length === 0 &&
+    (event.key.length === 1 || event.key === "Enter")
+  ) {
+    return;
+  }
+
+  event.preventDefault();
+
+  if (
+    android &&
+    action === "down" &&
+    !event.isComposing &&
+    modifiers.length === 0 &&
+    event.key.length === 1
+  ) {
+    sendInput({
+      type: "text_input",
+      text: event.key,
+      timestamp: Date.now()
+    });
+    return;
+  }
+
+  if (android && action === "down" && modifiers.length === 0 && event.key === "Enter") {
+    sendInput({
+      type: "text_input",
+      text: "\n",
+      timestamp: Date.now()
+    });
+    return;
+  }
+
+  sendKeyboardPacket(
+    event.key,
+    event.code,
+    action,
+    modifiers
+  );
 }
 
 function updateAndroidControls() {
@@ -1914,55 +2039,36 @@ function bindEvents() {
 
   $("#remoteVideo").addEventListener("pointermove", handlePointer);
   $("#remoteVideo").addEventListener("pointerdown", (event) => {
+    if (event.pointerType === "mouse" && event.button !== 0 && event.button !== 1 && event.button !== 2) {
+      return;
+    }
+    event.preventDefault();
     event.currentTarget.focus?.();
     try { event.currentTarget.setPointerCapture?.(event.pointerId); } catch {}
     const point = remoteVideoPoint(event);
     if (!point || !point.inside) return;
 
-    sendInput({
-      type: "mouse_button",
-      button: event.button === 2 ? "right" : event.button === 1 ? "middle" : "left",
-      action: "down",
-      x: point.x,
-      y: point.y,
-      timestamp: Date.now()
-    });
+    const button = pointerButton(event);
+    if (state.activePointerButtons.has(event.pointerId)) return;
+    state.activePointerButtons.set(event.pointerId, button);
+    sendPointerButton(event, "down", point, button);
   });
   $("#remoteVideo").addEventListener("pointercancel", (event) => {
+    event.preventDefault();
     try { event.currentTarget.releasePointerCapture?.(event.pointerId); } catch {}
-    sendInput({
-      type: "mouse_button",
-      button: event.button === 2 ? "right" : event.button === 1 ? "middle" : "left",
-      action: "up",
-      timestamp: Date.now()
-    });
+    const button = state.activePointerButtons.get(event.pointerId);
+    if (!button) return;
+    state.activePointerButtons.delete(event.pointerId);
+    sendPointerButton(event, "up", null, button);
   });
   $("#remoteVideo").addEventListener("pointerup", (event) => {
+    event.preventDefault();
     try { event.currentTarget.releasePointerCapture?.(event.pointerId); } catch {}
     const point = remoteVideoPoint(event);
-    if (!point || !point.inside) return;
-
-    sendInput({
-      type: "mouse_button",
-      button: event.button === 2 ? "right" : event.button === 1 ? "middle" : "left",
-      action: "up",
-      x: point.x,
-      y: point.y,
-      timestamp: Date.now()
-    });
-  });
-  $("#remoteVideo").addEventListener("dblclick", (event) => {
-    const point = remoteVideoPoint(event);
-    if (!point || !point.inside) return;
-
-    sendInput({
-      type: "mouse_button",
-      button: "left",
-      action: "double",
-      x: point.x,
-      y: point.y,
-      timestamp: Date.now()
-    });
+    const button = state.activePointerButtons.get(event.pointerId);
+    if (!button) return;
+    state.activePointerButtons.delete(event.pointerId);
+    sendPointerButton(event, "up", point, button);
   });
   $("#remoteVideo").addEventListener("contextmenu", (event) => event.preventDefault());
   $("#remoteVideo").addEventListener("wheel", (event) => {
@@ -1979,70 +2085,8 @@ function bindEvents() {
       timestamp: Date.now()
     });
   }, { passive: false });
-  $("#remoteVideo").addEventListener("keydown", (event) => {
-    if (state.role !== "controller" || !state.controlGranted) return;
-    event.preventDefault();
-
-    const modifiers = modifierNames(event);
-    const android = Boolean(state.peerCapabilities?.androidHost);
-
-    if (
-      android &&
-      !event.isComposing &&
-      modifiers.length === 0 &&
-      event.key.length === 1
-    ) {
-      sendInput({
-        type: "text_input",
-        text: event.key,
-        timestamp: Date.now()
-      });
-      return;
-    }
-
-    if (android && modifiers.length === 0 && event.key === "Enter") {
-      sendInput({
-        type: "text_input",
-        text: "\n",
-        timestamp: Date.now()
-      });
-      return;
-    }
-
-    sendInput({
-      type: "keyboard",
-      key: event.key,
-      code: event.code,
-      action: "down",
-      modifiers,
-      timestamp: Date.now()
-    });
-  });
-  $("#remoteVideo").addEventListener("keyup", (event) => {
-    if (state.role !== "controller" || !state.controlGranted) return;
-    event.preventDefault();
-
-    const modifiers = modifierNames(event);
-    const android = Boolean(state.peerCapabilities?.androidHost);
-
-    if (
-      android &&
-      !event.isComposing &&
-      modifiers.length === 0 &&
-      (event.key.length === 1 || event.key === "Enter")
-    ) {
-      return;
-    }
-
-    sendInput({
-      type: "keyboard",
-      key: event.key,
-      code: event.code,
-      action: "up",
-      modifiers,
-      timestamp: Date.now()
-    });
-  });
+  window.addEventListener("keydown", (event) => handleRemoteKey(event, "down"), true);
+  window.addEventListener("keyup", (event) => handleRemoteKey(event, "up"), true);
 
   $("#themeToggle").addEventListener("click", () => document.body.classList.toggle("light"));
   setInterval(refreshStats, 3000);

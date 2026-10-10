@@ -457,6 +457,7 @@ export function validateInputMessage(message) {
     ["down", "up"].includes(message.action) &&
     Array.isArray(message.modifiers) &&
     message.modifiers.length <= 4 &&
+    new Set(message.modifiers).size === message.modifiers.length &&
     message.modifiers.every(
       (value) =>
         ["CTRL", "ALT", "SHIFT", "META"].includes(value)
