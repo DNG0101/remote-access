@@ -219,6 +219,28 @@ public class MainActivity extends Activity {
         });
         root.addView(sendFile);
 
+        Button approveFile = new Button(this);
+        approveFile.setText("Approve incoming file");
+        approveFile.setOnClickListener(view -> {
+            HostService service = HostService.getInstance();
+            if (service != null) {
+                service.approveIncomingFile();
+                refreshStatus();
+            }
+        });
+        root.addView(approveFile);
+
+        Button rejectFile = new Button(this);
+        rejectFile.setText("Reject incoming file");
+        rejectFile.setOnClickListener(view -> {
+            HostService service = HostService.getInstance();
+            if (service != null) {
+                service.rejectIncomingFile();
+                refreshStatus();
+            }
+        });
+        root.addView(rejectFile);
+
         root.addView(
             text("Session chat", 13)
         );

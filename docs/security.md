@@ -9,6 +9,13 @@
 - The browser uses WebRTC's encrypted transport.
 - No secrets are stored in the static bundle.
 - Clipboard and files are explicit user actions, not background synchronization.
+- File offers require recipient approval before any payload is written. Binary
+  frames are validated independently from JSON control messages, duplicate
+  chunks are ignored, streamed writes reject out-of-order chunks, and exact
+  aggregate byte counts are required before completion. Transfers fail closed
+  on malformed frames, cancellation, channel closure, or stall timeout.
+- File limits are negotiated and enforced by both peers. Base64 is available
+  only as an explicit compatibility mode for Android and older clients.
 
 ## Production requirements before launch
 

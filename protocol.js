@@ -45,7 +45,8 @@ const FILE_TYPES = new Set([
   "file_accept",
   "file_reject",
   "file_chunk",
-  "file_complete"
+  "file_complete",
+  "file_cancel"
 ]);
 const CHAT_TYPES = new Set(["chat_message"]);
 const TELEMETRY_TYPES = new Set(["capabilities", "stats", "device_info"]);
@@ -54,8 +55,25 @@ const MAX_SIGNAL_BYTES = 256 * 1024;
 const MAX_CHANNEL_BYTES = 256 * 1024;
 const MAX_CLIPBOARD_BYTES = 100 * 1024;
 const MAX_CHAT_BYTES = 8 * 1024;
-const MAX_FILE_BYTES = 25 * 1024 * 1024;
-const MAX_FILE_CHUNK_BYTES = 160 * 1024;
+const configuredFileBytes = Number(globalThis.P2P_DESK_CONFIG?.maxFileBytes);
+const configuredChunkBytes = Number(globalThis.P2P_DESK_CONFIG?.fileChunkBytes);
+const configuredMaxChunks = Number(globalThis.P2P_DESK_CONFIG?.maxFileChunks);
+const MAX_FILE_BYTES = Number.isSafeInteger(configuredFileBytes) &&
+  configuredFileBytes > 0
+  ? configuredFileBytes
+  : 2 * 1024 * 1024 * 1024;
+const MAX_FILE_CHUNK_BYTES = Number.isSafeInteger(configuredChunkBytes) &&
+  configuredChunkBytes >= 16 * 1024 &&
+  configuredChunkBytes <= 1024 * 1024
+  ? configuredChunkBytes
+  : 256 * 1024;
+const MAX_FILE_CHUNKS = Number.isSafeInteger(configuredMaxChunks) &&
+  configuredMaxChunks > 0
+  ? configuredMaxChunks
+  : 16384;
+const MAX_FILE_TRANSFER_ID_BYTES = 96;
+const FILE_FRAME_MAGIC = new Uint8Array([0x50, 0x32, 0x50, 0x46]);
+const FILE_FRAME_VERSION = 1;
 const MAX_TEXT_INPUT_BYTES = 8 * 1024;
 const MAX_PENDING_CANDIDATES = 64;
 const MAX_PENDING_MESSAGES = 20;
@@ -537,13 +555,19 @@ export function validateFileTransferMessage(message) {
       Number.isInteger(message.size) &&
       message.size >= 0 &&
       message.size <= MAX_FILE_BYTES &&
+      (message.transferVersion == null || message.transferVersion === 2) &&
+      (message.mode == null || message.mode === "binary" || message.mode === "base64") &&
+      (message.chunkSize == null ||
+        (Number.isInteger(message.chunkSize) &&
+          message.chunkSize >= 16 * 1024 &&
+          message.chunkSize <= MAX_FILE_CHUNK_BYTES)) &&
       Number.isInteger(message.totalChunks) &&
       message.totalChunks >= 0 &&
-      message.totalChunks <= 512 &&
+      message.totalChunks <= MAX_FILE_CHUNKS &&
       message.totalChunks === (
         message.size === 0
           ? 0
-          : Math.ceil(message.size / MAX_FILE_CHUNK_BYTES)
+          : Math.ceil(message.size / (message.chunkSize || 160 * 1024))
       )
     );
   }
@@ -559,15 +583,93 @@ export function validateFileTransferMessage(message) {
     return (
       Number.isInteger(message.index) &&
       message.index >= 0 &&
-      message.index < 512 &&
+      message.index < MAX_FILE_CHUNKS &&
       typeof message.data === "string" &&
       message.data.length > 0 &&
-      message.data.length <= 240000 &&
+      message.data.length <= Math.ceil(MAX_FILE_CHUNK_BYTES * 4 / 3) + 8 &&
       base64Re.test(message.data)
     );
   }
 
-  return true;
+  if (message.type === "file_complete" || message.type === "file_cancel") {
+    return (
+      message.reason == null ||
+      (typeof message.reason === "string" && message.reason.length <= 160)
+    );
+  }
+
+  return false;
+}
+
+export function encodeFileBinaryFrame(transferId, index, bytes) {
+  if (!validTransferId(transferId) ||
+      byteLength(transferId) > MAX_FILE_TRANSFER_ID_BYTES ||
+      !Number.isInteger(index) ||
+      index < 0 ||
+      index >= MAX_FILE_CHUNKS ||
+      !(bytes instanceof Uint8Array) ||
+      bytes.byteLength === 0 ||
+      bytes.byteLength > MAX_FILE_CHUNK_BYTES) {
+    throw new Error("Invalid file binary frame.");
+  }
+
+  const id = encoder.encode(transferId);
+  const frame = new Uint8Array(
+    FILE_FRAME_MAGIC.length + 2 + id.byteLength + 8 + bytes.byteLength
+  );
+  const view = new DataView(frame.buffer);
+  frame.set(FILE_FRAME_MAGIC, 0);
+  view.setUint8(4, FILE_FRAME_VERSION);
+  view.setUint8(5, id.byteLength);
+  frame.set(id, 6);
+  const offset = 6 + id.byteLength;
+  view.setUint32(offset, index);
+  view.setUint32(offset + 4, bytes.byteLength);
+  frame.set(bytes, offset + 8);
+  return frame;
+}
+
+export function decodeFileBinaryFrame(value) {
+  if (!(value instanceof ArrayBuffer) && !ArrayBuffer.isView(value)) {
+    return { ok: false, reason: "FILE_FRAME_NOT_BINARY" };
+  }
+
+  const bytes = value instanceof ArrayBuffer
+    ? new Uint8Array(value)
+    : new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+  if (bytes.byteLength < 14 ||
+      !FILE_FRAME_MAGIC.every((item, index) => bytes[index] === item)) {
+    return { ok: false, reason: "FILE_FRAME_MAGIC_INVALID" };
+  }
+
+  const idLength = bytes[5];
+  const headerLength = 6 + idLength + 8;
+  if (bytes[4] !== FILE_FRAME_VERSION ||
+      idLength < 8 ||
+      idLength > MAX_FILE_TRANSFER_ID_BYTES ||
+      bytes.byteLength < headerLength) {
+    return { ok: false, reason: "FILE_FRAME_HEADER_INVALID" };
+  }
+
+  const decoder = new TextDecoder();
+  const transferId = decoder.decode(bytes.subarray(6, 6 + idLength));
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const index = view.getUint32(6 + idLength);
+  const length = view.getUint32(10 + idLength);
+  if (!validTransferId(transferId) ||
+      index >= MAX_FILE_CHUNKS ||
+      length === 0 ||
+      length > MAX_FILE_CHUNK_BYTES ||
+      length !== bytes.byteLength - headerLength) {
+    return { ok: false, reason: "FILE_FRAME_PAYLOAD_INVALID" };
+  }
+
+  return {
+    ok: true,
+    transferId,
+    index,
+    bytes: bytes.slice(headerLength)
+  };
 }
 
 export function validateTelemetryMessage(message) {
@@ -583,6 +685,18 @@ export function validateTelemetryMessage(message) {
       typeof message.fileTransfer === "boolean" &&
       typeof message.chat === "boolean" &&
       typeof message.nativeInput === "boolean" &&
+      (message.fileModes == null ||
+        (Array.isArray(message.fileModes) &&
+          message.fileModes.length <= 2 &&
+          message.fileModes.every((mode) => mode === "binary" || mode === "base64"))) &&
+      (message.fileChunkBytes == null ||
+        (Number.isInteger(message.fileChunkBytes) &&
+          message.fileChunkBytes >= 16 * 1024 &&
+          message.fileChunkBytes <= MAX_FILE_CHUNK_BYTES)) &&
+      (message.maxFileBytes == null ||
+        (Number.isSafeInteger(message.maxFileBytes) &&
+          message.maxFileBytes >= 0 &&
+          message.maxFileBytes <= MAX_FILE_BYTES)) &&
       (message.androidHost == null || typeof message.androidHost === "boolean") &&
       (message.touchGestures == null || typeof message.touchGestures === "boolean") &&
       (message.deviceActions == null || typeof message.deviceActions === "boolean") &&
@@ -693,6 +807,7 @@ export {
   MAX_CHAT_BYTES,
   MAX_FILE_BYTES,
   MAX_FILE_CHUNK_BYTES,
+  MAX_FILE_CHUNKS,
   MAX_TEXT_INPUT_BYTES,
   MAX_PENDING_CANDIDATES,
   MAX_PENDING_MESSAGES

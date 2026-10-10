@@ -3,6 +3,7 @@ import {
   makePeerId,
   validateSignalMessage,
   validateDataChannelMessage,
+  decodeFileBinaryFrame,
   calculateBitrate,
   MAX_PENDING_CANDIDATES,
   MAX_PENDING_MESSAGES,
@@ -807,6 +808,9 @@ export class PeerSession extends EventTarget {
     }
 
     this.channels.set(channel.label, channel);
+    if (channel.label === "file-transfer") {
+      channel.binaryType = "arraybuffer";
+    }
     channel.bufferedAmountLowThreshold = 64 * 1024;
 
     channel.onbufferedamountlow = () => {
@@ -842,6 +846,25 @@ export class PeerSession extends EventTarget {
     };
 
     channel.onmessage = (event) => {
+      if (channel.label === "file-transfer" &&
+          (event.data instanceof ArrayBuffer ||
+            ArrayBuffer.isView(event.data))) {
+        const frame = decodeFileBinaryFrame(event.data);
+        if (!frame.ok) {
+          this.emit("error", {
+            code: "INVALID_FILE_FRAME",
+            message: "A malformed binary file frame was rejected."
+          });
+          return;
+        }
+        this.emit("message", {
+          channel: channel.label,
+          data: frame,
+          binary: true
+        });
+        return;
+      }
+
       if (typeof event.data !== "string") {
         this.emit("error", {
           code: "INVALID_CHANNEL_MESSAGE",
@@ -1108,6 +1131,45 @@ export class PeerSession extends EventTarget {
         message: error.message
       });
       return false;
+    }
+  }
+
+  sendBinary(channel, bytes) {
+    if (this.closed || channel !== "file-transfer") return false;
+    const target = this.channels.get(channel);
+    if (!target || target.readyState !== "open") return false;
+    if (!(bytes instanceof ArrayBuffer) &&
+        !(ArrayBuffer.isView(bytes))) {
+      return false;
+    }
+
+    try {
+      target.send(bytes);
+      return true;
+    } catch (error) {
+      this.emit("error", {
+        code: "CHANNEL_SEND_FAILED",
+        message: error.message
+      });
+      return false;
+    }
+  }
+
+  async waitForBufferedAmount(channelName, limit, timeoutMs = 30_000) {
+    const channel = this.channels.get(channelName);
+    if (!channel) throw new Error(channelName + " channel is unavailable.");
+    const started = Date.now();
+
+    while (channel.readyState === "open" &&
+           channel.bufferedAmount > limit) {
+      if (Date.now() - started >= timeoutMs) {
+        throw new Error(channelName + " channel stalled.");
+      }
+      await new Promise((resolve) => setTimeout(resolve, 8));
+    }
+
+    if (channel.readyState !== "open") {
+      throw new Error(channelName + " channel closed.");
     }
   }
 

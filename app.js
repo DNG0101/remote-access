@@ -9,7 +9,9 @@ import {
   generateSessionCode,
   normalizeSessionCode,
   MAX_FILE_BYTES,
-  MAX_FILE_CHUNK_BYTES
+  MAX_FILE_CHUNK_BYTES,
+  MAX_FILE_CHUNKS,
+  encodeFileBinaryFrame
 } from "./protocol.js";
 
 const config = window.P2P_DESK_CONFIG || {};
@@ -139,6 +141,8 @@ function addChatMessage(text, side) {
 
 function resetModules() {
   state.chatMessages = [];
+  const previousIncoming = state.incomingFile;
+  if (previousIncoming?.timeout) clearTimeout(previousIncoming.timeout);
   state.incomingFile = null;
   state.outgoingFile = null;
   state.peerCapabilities = null;
@@ -186,19 +190,6 @@ function transferId() {
   ).replace(/[^A-Za-z0-9_-]/g, "");
 }
 
-function bytesToBase64(bytes) {
-  let binary = "";
-  const step = 0x8000;
-
-  for (let index = 0; index < bytes.length; index += step) {
-    binary += String.fromCharCode(
-      ...bytes.subarray(index, Math.min(index + step, bytes.length))
-    );
-  }
-
-  return btoa(binary);
-}
-
 function base64ToBytes(value) {
   const binary = atob(value);
   const bytes = new Uint8Array(binary.length);
@@ -208,6 +199,17 @@ function base64ToBytes(value) {
   }
 
   return bytes;
+}
+
+function bytesToBase64(bytes) {
+  let binary = "";
+  const step = 0x8000;
+  for (let index = 0; index < bytes.length; index += step) {
+    binary += String.fromCharCode(
+      ...bytes.subarray(index, Math.min(index + step, bytes.length))
+    );
+  }
+  return btoa(binary);
 }
 
 async function waitForChannel(session, name, timeoutMs = 10_000) {
@@ -230,17 +232,29 @@ async function sendFile(file) {
 
   if (!(file instanceof File)) return;
 
-  if (file.size > MAX_FILE_BYTES) {
-    toast("Files are limited to 25 MB in the browser client.", "error");
+  const peerMaxBytes = Number(state.peerCapabilities?.maxFileBytes) || MAX_FILE_BYTES;
+  const effectiveMaxBytes = Math.min(MAX_FILE_BYTES, peerMaxBytes);
+  if (file.size > effectiveMaxBytes) {
+    toast("The configured peer file limit is " + Math.round(effectiveMaxBytes / 1024 / 1024) + " MB.", "error");
     return;
   }
 
+  const mode = state.peerCapabilities?.fileModes?.includes("binary")
+    && typeof state.session.sendBinary === "function"
+    ? "binary"
+    : "base64";
+  const chunkSize = mode === "binary"
+    ? Math.min(
+      MAX_FILE_CHUNK_BYTES,
+      Number(state.peerCapabilities?.fileChunkBytes) || MAX_FILE_CHUNK_BYTES
+    )
+    : Math.min(160 * 1024, MAX_FILE_CHUNK_BYTES);
   const totalChunks = file.size === 0
     ? 0
-    : Math.ceil(file.size / MAX_FILE_CHUNK_BYTES);
+    : Math.ceil(file.size / chunkSize);
 
-  if (totalChunks > 512) {
-    toast("This file is too large for the browser transfer protocol.", "error");
+  if (totalChunks > MAX_FILE_CHUNKS) {
+    toast("This file exceeds the configured chunk limit.", "error");
     return;
   }
 
@@ -258,6 +272,8 @@ async function sendFile(file) {
     id,
     file,
     totalChunks,
+    chunkSize,
+    mode,
     accepted: false
   };
 
@@ -270,7 +286,10 @@ async function sendFile(file) {
     name: file.name,
     mime: file.type || "application/octet-stream",
     size: file.size,
-    totalChunks
+    totalChunks,
+    transferVersion: 2,
+    mode,
+    chunkSize
   });
 
   if (!sent) {
@@ -290,31 +309,32 @@ async function sendOutgoingFile() {
 
   try {
     const channel = await waitForChannel(state.session, "file-transfer");
-    const { file, totalChunks, id } = transfer;
+    const { file, totalChunks, id, chunkSize, mode } = transfer;
 
     for (let index = 0; index < totalChunks; index++) {
-      const start = index * MAX_FILE_CHUNK_BYTES;
-      const end = Math.min(file.size, start + MAX_FILE_CHUNK_BYTES);
+      const start = index * chunkSize;
+      const end = Math.min(file.size, start + chunkSize);
       const buffer = await file.slice(start, end).arrayBuffer();
-      const data = bytesToBase64(new Uint8Array(buffer));
+      const bytes = new Uint8Array(buffer);
 
-      while (
-        channel.bufferedAmount > 192 * 1024 &&
-        channel.readyState === "open"
-      ) {
-        await new Promise((resolve) => setTimeout(resolve, 20));
-      }
+      await state.session.waitForBufferedAmount(
+        "file-transfer",
+        Number(config.fileBufferedAmount) || 4 * 1024 * 1024
+      );
 
-      if (channel.readyState !== "open") {
-        throw new Error("The file-transfer channel closed.");
-      }
+      const sent = mode === "binary"
+        ? state.session.sendBinary(
+          "file-transfer",
+          encodeFileBinaryFrame(id, index, bytes)
+        )
+        : state.session.send("file-transfer", {
+          type: "file_chunk",
+          transferId: id,
+          index,
+          data: bytesToBase64(bytes)
+        });
 
-      if (!state.session.send("file-transfer", {
-        type: "file_chunk",
-        transferId: id,
-        index,
-        data
-      })) {
+      if (!sent) {
         throw new Error("A file chunk could not be sent.");
       }
 
@@ -324,10 +344,10 @@ async function sendOutgoingFile() {
       );
     }
 
-    state.session.send("file-transfer", {
+    if (!state.session.send("file-transfer", {
       type: "file_complete",
       transferId: id
-    });
+    })) throw new Error("The file completion message could not be sent.");
 
     setModuleStatus("fileStatus", "SENT", "green");
     toast("File sent successfully.", "success");
@@ -351,8 +371,19 @@ function showFileOffer(message) {
     chunks: new Array(message.totalChunks),
     received: new Set(),
     receivedBytes: 0,
+    chunkSize: message.chunkSize || 160 * 1024,
+    mode: message.mode || "base64",
+    sink: null,
+    writeChain: Promise.resolve(),
+    nextWriteIndex: 0,
+    lastProgressAt: Date.now(),
     accepted: false
   };
+  state.incomingFile.timeout = setTimeout(() => {
+    if (state.incomingFile?.id === message.transferId) {
+      failIncomingFile("The incoming file transfer stalled.");
+    }
+  }, Number(config.fileTransferTimeoutMs) || 30_000);
 
   $("#fileOfferName").textContent = message.name;
   $("#fileOfferMeta").textContent =
@@ -364,9 +395,27 @@ function showFileOffer(message) {
   setModuleStatus("fileStatus", "OFFER", "amber");
 }
 
-function acceptFile() {
+async function acceptFile() {
   const incoming = state.incomingFile;
   if (!incoming || !state.session || !state.peerConnected) return;
+
+  if (incoming.size > MAX_FILE_BYTES) {
+    toast("The file exceeds this peer's configured limit.", "error");
+    rejectFile();
+    return;
+  }
+
+  if (typeof window.showSaveFilePicker === "function") {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: sanitizeFilename(incoming.name)
+      });
+      incoming.sink = await handle.createWritable();
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+      toast("Streaming save is unavailable; using bounded browser buffering.", "info");
+    }
+  }
 
   incoming.accepted = true;
   state.session.send("file-transfer", {
@@ -394,16 +443,96 @@ function rejectFile() {
   toast("File offer rejected.", "info");
 }
 
-function completeIncomingFile() {
+async function handleIncomingBinaryFile(frame) {
+  const incoming = state.incomingFile;
+  if (!incoming || incoming.id !== frame.transferId || !incoming.accepted) return;
+  if (incoming.received.has(frame.index) ||
+      frame.index >= incoming.totalChunks) return;
+  if (incoming.sink && frame.index !== incoming.nextWriteIndex) {
+    failIncomingFile("The binary file chunks arrived out of order.");
+    return;
+  }
+
+  const expected = frame.index === incoming.totalChunks - 1
+    ? incoming.size - (incoming.chunkSize * frame.index)
+    : incoming.chunkSize;
+  if (expected <= 0 || frame.bytes.byteLength !== expected) {
+    failIncomingFile("The received chunk size did not match the offer.");
+    return;
+  }
+
+  incoming.received.add(frame.index);
+  incoming.receivedBytes += frame.bytes.byteLength;
+  incoming.lastProgressAt = Date.now();
+  if (incoming.receivedBytes > incoming.size) {
+    failIncomingFile("Incoming file exceeded its declared size.");
+    return;
+  }
+
+  if (incoming.sink) {
+    incoming.writeChain = incoming.writeChain.then(() => incoming.sink.write(frame.bytes));
+    incoming.nextWriteIndex += 1;
+    await incoming.writeChain;
+  } else {
+    incoming.chunks[frame.index] = frame.bytes;
+  }
+  updateFileProgress(
+    "Receiving " + incoming.name,
+    incoming.totalChunks ? (incoming.received.size / incoming.totalChunks) * 100 : 100
+  );
+}
+
+function sanitizeFilename(name) {
+  return String(name || "download")
+    .replace(/[\\/:*?"<>|]/g, "_")
+    .replace(/[\u0000-\u001f]/g, "")
+    .slice(0, 255) || "download";
+}
+
+function failIncomingFile(message) {
+  const incoming = state.incomingFile;
+  if (incoming?.sink) incoming.sink.abort().catch(() => {});
+  if (incoming?.timeout) clearTimeout(incoming.timeout);
+  if (incoming && state.session) {
+    state.session.send("file-transfer", {
+      type: "file_cancel",
+      transferId: incoming.id,
+      reason: message
+    });
+  }
+  state.incomingFile = null;
+  setModuleStatus("fileStatus", "FAILED", "red");
+  toast(message, "error");
+  logEvent("file_receive_failed", { reason: message }, "error");
+}
+
+async function completeIncomingFile() {
   const incoming = state.incomingFile;
   if (!incoming || !incoming.accepted) return;
 
   if (
     incoming.received.size !== incoming.totalChunks ||
-    incoming.receivedBytes > incoming.size
+    incoming.receivedBytes !== incoming.size
   ) {
-    setModuleStatus("fileStatus", "FAILED", "red");
-    toast("The received file was incomplete.", "error");
+    failIncomingFile("The received file was incomplete.");
+    return;
+  }
+
+  if (incoming.sink) {
+    await incoming.writeChain;
+    await incoming.sink.close();
+    state.completedFile = {
+      url: "",
+      name: sanitizeFilename(incoming.name)
+    };
+    state.incomingFile = null;
+    if (incoming.timeout) clearTimeout(incoming.timeout);
+    $("#fileOfferName").textContent = state.completedFile.name;
+    $("#fileOfferMeta").textContent = "Transfer complete · saved to selected location";
+    $("[data-action='save-file']").classList.add("hidden");
+    $("#fileOffer").classList.remove("hidden");
+    setModuleStatus("fileStatus", "RECEIVED", "green");
+    toast("File received successfully.", "success");
     return;
   }
 
@@ -412,19 +541,19 @@ function completeIncomingFile() {
   });
 
   if (blob.size !== incoming.size) {
-    setModuleStatus("fileStatus", "FAILED", "red");
-    toast("The received file size did not match the offer.", "error");
+    failIncomingFile("The received file size did not match the offer.");
     return;
   }
 
   const url = URL.createObjectURL(blob);
-  const safeName = incoming.name.replace(/[\\/:*?"<>|]/g, "_") || "download";
+  const safeName = sanitizeFilename(incoming.name);
 
   state.completedFile = {
     url,
     name: safeName
   };
   state.incomingFile = null;
+  if (incoming.timeout) clearTimeout(incoming.timeout);
 
   $("#fileOfferName").textContent = safeName;
   $("#fileOfferMeta").textContent = "Transfer complete · click Save to download";
@@ -477,7 +606,10 @@ function sendCapabilities(session) {
     clipboard: Boolean(navigator.clipboard),
     fileTransfer: true,
     chat: true,
-    nativeInput: Boolean(state.nativeAgent?.capabilities?.nativeInput)
+    nativeInput: Boolean(state.nativeAgent?.capabilities?.nativeInput),
+    fileModes: ["binary", "base64"],
+    fileChunkBytes: MAX_FILE_CHUNK_BYTES,
+    maxFileBytes: MAX_FILE_BYTES
   };
 
   if (validateTelemetryMessage(message)) {
@@ -696,6 +828,17 @@ function wireSession(session) {
       if (detail.name === "file-transfer") setModuleStatus("fileStatus", "READY", "green");
       if (detail.name === "telemetry") sendCapabilities(session);
     }
+
+    if (detail.state === "closed" && detail.name === "file-transfer") {
+      if (state.outgoingFile) {
+        state.outgoingFile = null;
+        setModuleStatus("fileStatus", "FAILED", "red");
+        toast("The file-transfer channel closed.", "error");
+      }
+      if (state.incomingFile) {
+        failIncomingFile("The file-transfer channel closed.");
+      }
+    }
   });
 
   session.on("track", ({ stream, track }) => {
@@ -725,6 +868,11 @@ function wireSession(session) {
   });
 
   session.on("message", ({ channel, data }) => {
+    if (channel === "file-transfer" && data?.ok && data?.binary !== false) {
+      void handleIncomingBinaryFile(data);
+      return;
+    }
+
     let message;
     try {
       message = typeof data === "string" ? JSON.parse(data) : data;
@@ -937,6 +1085,19 @@ function wireSession(session) {
         return;
       }
 
+      if (message.type === "file_cancel") {
+        if (state.outgoingFile?.id === message.transferId) {
+          state.outgoingFile = null;
+          $("#fileProgress")?.classList.add("hidden");
+          setModuleStatus("fileStatus", "FAILED", "red");
+          toast("The peer cancelled the file transfer.", "error");
+        }
+        if (state.incomingFile?.id === message.transferId) {
+          failIncomingFile(message.reason || "The peer cancelled the file transfer.");
+        }
+        return;
+      }
+
       const incoming = state.incomingFile;
       if (!incoming || incoming.id !== message.transferId || !incoming.accepted) return;
 
@@ -957,15 +1118,36 @@ function wireSession(session) {
           return;
         }
 
+        const expected = message.index === incoming.totalChunks - 1
+          ? incoming.size - (incoming.chunkSize * message.index)
+          : incoming.chunkSize;
+        if (bytes.byteLength !== expected || expected <= 0) {
+          failIncomingFile("The received chunk size did not match the offer.");
+          return;
+        }
+
         incoming.received.add(message.index);
-        incoming.chunks[message.index] = bytes;
         incoming.receivedBytes += bytes.byteLength;
 
         if (incoming.receivedBytes > incoming.size) {
           setModuleStatus("fileStatus", "FAILED", "red");
-          state.incomingFile = null;
-          toast("Incoming file exceeded its declared size.", "error");
+          failIncomingFile("Incoming file exceeded its declared size.");
           return;
+        }
+
+        if (incoming.sink) {
+          if (message.index !== incoming.nextWriteIndex) {
+            failIncomingFile("The file chunks arrived out of order.");
+            return;
+          }
+          incoming.writeChain = incoming.writeChain
+            .then(() => incoming.sink.write(bytes))
+            .catch(() => {
+              failIncomingFile("The destination file could not be written.");
+            });
+          incoming.nextWriteIndex += 1;
+        } else {
+          incoming.chunks[message.index] = bytes;
         }
 
         updateFileProgress(
@@ -976,7 +1158,7 @@ function wireSession(session) {
       }
 
       if (message.type === "file_complete") {
-        completeIncomingFile();
+        void completeIncomingFile();
       }
       return;
     }
@@ -1580,7 +1762,7 @@ function bindEvents() {
   });
 
   $("[data-action='mobile-keyboard']").addEventListener("click", openMobileKeyboard);
-  $("[data-android-action]").forEach((button) => {
+  $$("[data-android-action]").forEach((button) => {
     button.addEventListener("click", () => sendAndroidAction(button.dataset.androidAction));
   });
 

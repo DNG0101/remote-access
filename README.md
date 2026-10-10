@@ -15,7 +15,7 @@ The browser milestone implements these end-to-end modules:
 - Normalized mouse/keyboard input messages over the input channel.
 - User-initiated text clipboard transfer from controller to host browser.
 - Bidirectional chat over the chat data channel.
-- Bidirectional file transfer up to 25 MB using chunked, ordered WebRTC data-channel messages.
+- Bidirectional file transfer using negotiated binary WebRTC frames with ordered delivery, adaptive chunk sizing, backpressure, explicit approval, cancellation, and a configurable 2 GiB browser limit. Android/legacy peers negotiate a bounded Base64 compatibility mode.
 - Capability discovery and lightweight telemetry.
 - Android-friendly touch control with an on-screen mobile keyboard routed through the native PC agent.
 - Connection/ICE/data-channel diagnostics.
@@ -44,7 +44,11 @@ window.P2P_DESK_CONFIG = {
     { urls: ["stun:stun.example.com:3478"] }
   ],
   sessionTtlMinutes: 30,
-  maxFileBytes: 25 * 1024 * 1024
+  maxFileBytes: 2 * 1024 * 1024 * 1024,
+  maxFileChunks: 16384,
+  fileChunkBytes: 256 * 1024,
+  fileBufferedAmount: 4 * 1024 * 1024,
+  fileTransferTimeoutMs: 30 * 1000
 };
 ```
 

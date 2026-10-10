@@ -53,6 +53,7 @@ public class HostService extends Service
     private java.io.File lastReceivedFile;
     private volatile OutgoingFile outgoingFile;
     private long incomingSize;
+    private JSONObject pendingIncomingOffer;
     private final java.util.List<String> chatHistory =
         new java.util.concurrent.CopyOnWriteArrayList<>();
 
@@ -609,38 +610,36 @@ public class HostService extends Service
                 return;
             }
 
-            incomingFileId =
-                message.optString("transferId");
-            incomingFileName =
-                sanitize(
-                    message.optString("name", "download")
-                );
-            incomingSize = size;
-            incomingTotal = chunks;
-            incomingChunks = new byte[chunks][];
-            incomingReceived = 0;
-            incomingBytes = 0;
-
-            if (host != null) {
-                host.send(
-                    "file-transfer",
-                    new JSONObject()
-                        .put(
-                            "type",
-                            "file_accept"
-                        )
-                        .put(
-                            "transferId",
-                            incomingFileId
-                        )
-                );
+            if (pendingIncomingOffer != null || incomingChunks != null) {
+                if (host != null) {
+                    host.send(
+                        "file-transfer",
+                        new JSONObject()
+                            .put("type", "file_reject")
+                            .put("transferId", message.optString("transferId"))
+                    );
+                }
+                return;
             }
 
-            if (incomingTotal == 0) {
-                finalizeIncomingFile();
-            } else {
-                setStatus("FILE_RECEIVING");
+            String transferId = message.optString("transferId", "");
+            String name = message.optString("name", "");
+            if (transferId.length() < 8 ||
+                transferId.length() > 96 ||
+                name.trim().isEmpty() ||
+                name.length() > 255) {
+                return;
             }
+
+            pendingIncomingOffer = message;
+            setStatus("FILE_OFFER_PENDING");
+            return;
+        }
+
+        if ("file_cancel".equals(type)) {
+            pendingIncomingOffer = null;
+            incomingChunks = null;
+            setStatus("FILE_CANCELLED");
             return;
         }
 
@@ -730,6 +729,80 @@ public class HostService extends Service
             ) {
                 finalizeIncomingFile();
             }
+        }
+    }
+
+    public synchronized boolean approveIncomingFile() {
+        if (pendingIncomingOffer == null) return false;
+        try {
+            JSONObject message = pendingIncomingOffer;
+            int size = message.optInt("size", -1);
+            int chunks = message.optInt("totalChunks", -1);
+            if (size < 0 || size > MAX_FILE_BYTES ||
+                chunks < 0 || chunks > 512) {
+                pendingIncomingOffer = null;
+                return false;
+            }
+            incomingFileId =
+                message.optString("transferId");
+            incomingFileName =
+                sanitize(
+                    message.optString("name", "download")
+                );
+            incomingSize = size;
+            incomingTotal = chunks;
+            incomingChunks = new byte[chunks][];
+            incomingReceived = 0;
+            incomingBytes = 0;
+            pendingIncomingOffer = null;
+
+            if (host != null) {
+                host.send(
+                    "file-transfer",
+                    new JSONObject()
+                        .put(
+                            "type",
+                            "file_accept"
+                        )
+                        .put(
+                            "transferId",
+                            incomingFileId
+                        )
+                );
+            }
+
+            if (incomingTotal == 0) {
+                finalizeIncomingFile();
+            } else {
+                setStatus("FILE_RECEIVING");
+            }
+            return true;
+        } catch (Exception error) {
+            fail("Android file approval failed: " + error.getMessage());
+            return false;
+        }
+    }
+
+    public synchronized boolean rejectIncomingFile() {
+        if (pendingIncomingOffer == null) return false;
+        try {
+            if (host != null) {
+                host.send(
+                    "file-transfer",
+                    new JSONObject()
+                        .put("type", "file_reject")
+                        .put(
+                            "transferId",
+                            pendingIncomingOffer.optString("transferId")
+                        )
+                );
+            }
+            pendingIncomingOffer = null;
+            setStatus("FILE_REJECTED");
+            return true;
+        } catch (Exception error) {
+            fail("Android file rejection failed: " + error.getMessage());
+            return false;
         }
     }
 

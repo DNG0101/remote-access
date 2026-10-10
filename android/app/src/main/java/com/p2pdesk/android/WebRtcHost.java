@@ -35,6 +35,7 @@ public final class WebRtcHost {
     public interface Listener {
         void onState(String state);
         void onMessage(String channel, JSONObject message);
+        default void onBinaryMessage(String channel, byte[] payload) {}
         void onError(String message);
     }
 
@@ -47,6 +48,7 @@ public final class WebRtcHost {
             "telemetry",
             "chat"
         );
+    private static final int MAX_FILE_CHUNK_BYTES = 160 * 1024;
 
     private final Context context;
     private final SignalingClient signaling;
@@ -451,6 +453,18 @@ public final class WebRtcHost {
                             new byte[data.remaining()];
                         data.get(bytes);
 
+                        if (buffer.binary) {
+                            if ("file-transfer".equals(channel.label())) {
+                                listener.onBinaryMessage(channel.label(), bytes);
+                            } else {
+                                listener.onError(
+                                    "Binary data is not valid for " +
+                                    channel.label() + "."
+                                );
+                            }
+                            return;
+                        }
+
                         JSONObject message =
                             new JSONObject(
                                 new String(
@@ -490,7 +504,10 @@ public final class WebRtcHost {
                 .put("androidHost", true)
                 .put("touchGestures", true)
                 .put("deviceActions", true)
-                .put("microphone", shareMicrophone);
+                .put("microphone", shareMicrophone)
+                .put("fileModes", new org.json.JSONArray().put("base64"))
+                .put("fileChunkBytes", MAX_FILE_CHUNK_BYTES)
+                .put("maxFileBytes", 25L * 1024L * 1024L);
 
             if (!send("telemetry", message)) return;
 
@@ -785,6 +802,26 @@ public final class WebRtcHost {
             new DataChannel.Buffer(
                 ByteBuffer.wrap(bytes),
                 false
+            )
+        );
+    }
+
+    public boolean sendBinary(
+        String channel,
+        byte[] payload
+    ) {
+        DataChannel dataChannel = channels.get(channel);
+        if (dataChannel == null ||
+            dataChannel.state() != DataChannel.State.OPEN ||
+            payload == null ||
+            payload.length == 0) {
+            return false;
+        }
+
+        return dataChannel.send(
+            new DataChannel.Buffer(
+                ByteBuffer.wrap(payload),
+                true
             )
         );
     }

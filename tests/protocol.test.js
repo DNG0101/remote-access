@@ -10,7 +10,10 @@ import {
   validateChatMessage,
   validateFileTransferMessage,
   validateTelemetryMessage,
-  calculateBitrate
+  calculateBitrate,
+  encodeFileBinaryFrame,
+  decodeFileBinaryFrame,
+  MAX_FILE_CHUNK_BYTES
 } from "../protocol.js";
 import { PeerSession } from "../webrtc.js";
 test("session codes are secure six-digit values",()=>{const c=generateSessionCode();assert.match(c,/^\d{6}$/);assert.equal(normalizeSessionCode("12a 34-5678"),"123456");});
@@ -259,6 +262,28 @@ test("zero-byte files are valid transfer offers", () => {
       totalChunks: 0
     }),
     true
+  );
+});
+
+test("binary file frames round-trip and reject malformed payloads", () => {
+  const bytes = new Uint8Array([0, 1, 2, 253, 255]);
+  const frame = encodeFileBinaryFrame("file-binary-1", 7, bytes);
+  const decoded = decodeFileBinaryFrame(frame);
+  assert.equal(decoded.ok, true);
+  assert.equal(decoded.transferId, "file-binary-1");
+  assert.equal(decoded.index, 7);
+  assert.deepEqual([...decoded.bytes], [...bytes]);
+
+  const malformed = frame.slice();
+  malformed[0] = 0;
+  assert.equal(decodeFileBinaryFrame(malformed).ok, false);
+
+  assert.throws(() =>
+    encodeFileBinaryFrame(
+      "file-binary-1",
+      0,
+      new Uint8Array(MAX_FILE_CHUNK_BYTES + 1)
+    )
   );
 });
 

@@ -16,7 +16,7 @@ test("controller can join a session by six-digit room code", () => {
   const app = read("app.js");
   assert.doesNotMatch(
     app,
-    /(?<!\\$)\\$\\("[^"]+"\\)\\.(?:forEach|map|filter|some|find|reduce)\\(/
+    /(?<!\$)\$\("[^"]+"\)\.(?:forEach|map|filter|some|find|reduce)\(/
   );
   assert.match(app, /normalizeSessionCode\(code\)/);
   assert.match(app, /createSession\("controller", code\)/);
@@ -27,6 +27,9 @@ test("controller can join a session by six-digit room code", () => {
   assert.match(app, /data-action='save-file'/);
   assert.match(app, /validateFileTransferMessage/);
   assert.match(app, /validateTelemetryMessage/);
+  assert.match(app, /sendBinary/);
+  assert.match(app, /showSaveFilePicker/);
+  assert.match(app, /file_cancel/);
   assert.match(app, /NativeAgentClient/);
   assert.match(app, /data-action='mobile-keyboard'/);
   assert.match(app, /type: "text_input"/);
@@ -54,7 +57,7 @@ test("public client is configured for a WSS signaling endpoint", () => {
   const config = read("config.js");
   assert.match(config, /wss:\/\//);
   assert.match(config, /signalingUrl/);
-  assert.match(config, /appVersion: "0\.5\.0"/);
+  assert.match(config, /appVersion: "0\.6\.0"/);
 });
 
 
@@ -78,8 +81,11 @@ test("Android host source contains real native control modules", () => {
   assert.match(accessibility, /ACTION_SET_SELECTION/);
   assert.match(accessibility, /GLOBAL_ACTION_LOCK_SCREEN/);
   assert.match(host, /sendFileToPeer/);
+  assert.match(host, /approveIncomingFile/);
+  assert.match(host, /FILE_OFFER_PENDING/);
   assert.match(host, /handleChat/);
   assert.match(rtc, /androidHost/);
+  assert.match(rtc, /onBinaryMessage/);
   assert.match(html, /data-android-action="back"/);
 });
 
