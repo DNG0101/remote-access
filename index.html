@@ -92,6 +92,29 @@
               <label class="toggle-row"><span><strong>Allow control requests</strong><small>View-only remains the starting state</small></span><input type="checkbox" id="allowControl" checked /><i class="toggle"></i></label>
               <label class="toggle-row"><span><strong>Allow clipboard sharing</strong><small>Text only, always user initiated</small></span><input type="checkbox" id="shareClipboard" /><i class="toggle"></i></label>
               <button class="button primary wide" data-action="create-host"><span class="button-icon">+</span> Create host session</button>
+              <details class="host-setup" id="windowsHostSetup" open>
+                <summary>Windows remote mouse &amp; keyboard setup</summary>
+                <p class="host-setup-note">To control Windows apps (not just view the screen), the computer being shared must run the included local host agent. The controller only needs this website.</p>
+                <ol class="host-setup-steps">
+                  <li>Install <a href="https://nodejs.org/" target="_blank" rel="noopener noreferrer">Node.js</a> if needed.</li>
+                  <li>Open the <a href="https://github.com/DNG0101/remote-access" target="_blank" rel="noopener noreferrer">remote-access repository</a>, select <strong>Code → Download ZIP</strong>, and extract the ZIP.</li>
+                  <li>Open the extracted <strong>remote-access-main</strong> folder (the one containing <code>package.json</code>), then type <code>powershell</code> in File Explorer's address bar and press Enter.</li>
+                  <li>Copy and run the following commands in that PowerShell window:</li>
+                </ol>
+                <div class="host-command-bar">
+                  <span>PowerShell — Windows host</span>
+                  <button type="button" class="copy-button" data-action="copy-host-commands">Copy commands</button>
+                </div>
+                <pre class="host-command-block"><code id="hostPowerShellCommands">npm.cmd install --omit=dev
+$env:P2P_DESK_AGENT_ORIGINS = "https://dng0101.github.io"
+node .\agent\host-agent.mjs</code></pre>
+                <p class="host-setup-note">Keep PowerShell open while sharing. After starting the agent, create a host session, share your screen, and approve the remote control request. Press <code>Ctrl+C</code> in PowerShell to stop the agent.</p>
+                <div class="host-agent-check">
+                  <span id="hostSetupStatus" role="status" aria-live="polite">Local agent not connected</span>
+                  <button type="button" class="copy-button" data-action="retry-native-agent">Check agent connection</button>
+                </div>
+                <p class="host-setup-note">The connection check needs an active host session. Your permission is always required before a peer can control this computer. Running the agent allows OS-level input; only use code you trust.</p>
+              </details>
             </div>
             <div class="session-form hidden" id="controllerForm">
               <label class="field-label" for="joinCode">SESSION CODE</label>
