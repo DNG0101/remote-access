@@ -116,3 +116,18 @@ test("remote desktop utility modules are wired into the controller", () => {
   assert.match(protocol, /android_action/);
   assert.match(protocol, /device_info/);
 });
+
+test("host displays copyable PowerShell setup for local Windows input", () => {
+  const html = read("index.html");
+  const app = read("app.js");
+  assert.match(html, /id="windowsHostSetup"/);
+  assert.match(html, /id="hostPowerShellCommands"/);
+  assert.match(html, /data-action="copy-host-commands"/);
+  assert.match(html, /data-action="retry-native-agent"/);
+  assert.match(html, /nodejs\.org/);
+  assert.match(app, /npm\.cmd install --omit=dev/);
+  assert.match(app, /P2P_DESK_AGENT_ORIGINS/);
+  assert.match(app, /renderHostPowerShellCommands/);
+  assert.match(app, /retryNativeAgent/);
+  assert.match(app, /setHostSetupStatus/);
+});
