@@ -53,3 +53,20 @@
 @media(max-width:520px){.remote-media-controls{flex-wrap:wrap}.remote-media-hint{flex-basis:100%}.device-controls .tool-button{flex:1 0 auto}}
 
 .remote-media-controls{align-items:center}
+
+/* Windows host PowerShell setup, shown only in the Host role form. */
+.host-setup{margin-top:14px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);padding:12px 14px}
+.host-setup summary{cursor:pointer;color:var(--ink);font:500 13px "Space Grotesk";line-height:1.5}
+.host-setup summary:focus-visible,.host-setup button:focus-visible{outline:2px solid var(--mint);outline-offset:3px}
+.host-setup-note{color:var(--muted);font-size:11px;line-height:1.65;margin:12px 0 0}
+.host-setup-steps{color:var(--muted);font-size:11px;line-height:1.65;padding-left:19px;margin:12px 0}
+.host-setup-steps li{padding-left:3px;margin:6px 0}
+.host-setup a{color:var(--mint);text-decoration:underline;text-underline-offset:2px}
+.host-command-bar{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:14px 0 0;font:10px "DM Mono";color:var(--muted)}
+.host-command-block{margin:7px 0 0;padding:12px;border:1px solid var(--line);border-radius:6px;background:#081322;overflow-x:auto;white-space:pre-wrap;overflow-wrap:anywhere;user-select:text;font:11px/1.75 "DM Mono",monospace}
+.host-command-block code{font:inherit;color:#a5f6d7}
+.host-agent-check{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-top:12px}
+#hostSetupStatus{font-size:11px;color:var(--amber)}
+#hostSetupStatus[data-tone="green"]{color:var(--mint)}
+#hostSetupStatus[data-tone="red"]{color:var(--red)}
+@media(max-width:520px){.host-setup{padding:10px}.host-command-bar{flex-wrap:wrap}.host-command-block{font-size:10px}}
