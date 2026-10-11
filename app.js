@@ -648,6 +648,46 @@ function resetSessionUi() {
   updateControlButton();
 }
 
+function renderHostPowerShellCommands() {
+  const block = $("#hostPowerShellCommands");
+  if (!block) return;
+  const allowedOrigin = /^https?:$/.test(location.protocol)
+    ? location.origin
+    : "https://dng0101.github.io";
+  block.textContent = [
+    "npm.cmd install --omit=dev",
+    '$env:P2P_DESK_AGENT_ORIGINS = "' + allowedOrigin + '"',
+    "node .\\agent\\host-agent.mjs"
+  ].join("\n");
+}
+
+function setHostSetupStatus(message, tone = "amber") {
+  const element = $("#hostSetupStatus");
+  if (!element) return;
+  element.textContent = message;
+  element.dataset.tone = tone;
+}
+
+async function retryNativeAgent() {
+  if (state.role !== "host" || !state.session) {
+    toast("Create a host session, then check the local agent.", "info");
+    return;
+  }
+  if (!state.nativeAgent) {
+    setupNativeAgent(state.session);
+    return;
+  }
+  setHostSetupStatus("Checking local agent...", "amber");
+  try {
+    if (!await state.nativeAgent.connect()) {
+      setHostSetupStatus("Agent unavailable — run the commands above and retry.", "red");
+      toast("The local agent is not ready. Start it in PowerShell first.", "info");
+    }
+  } catch {
+    setHostSetupStatus("Agent unavailable — check PowerShell output.", "red");
+  }
+}
+
 function setupNativeAgent(session) {
   if (state.nativeAgent) {
     try { state.nativeAgent.close(); } catch {}
@@ -655,6 +695,7 @@ function setupNativeAgent(session) {
   }
 
   state.nativeAgentWarned = false;
+  setHostSetupStatus("Connecting to local agent...", "amber");
 
   if (state.role !== "host" || !config.agentUrl) {
     setModuleStatus("nativeStatus", "N/A");
@@ -677,11 +718,17 @@ function setupNativeAgent(session) {
             ? "Native OS mouse/keyboard input is available."
             : "Agent connected, but native input is unavailable on this host.";
       }
+      setHostSetupStatus(agent.capabilities.nativeInput
+        ? "Agent connected — Windows input ready"
+        : "Agent connected — native input unavailable",
+        agent.capabilities.nativeInput ? "green" : "red");
       sendCapabilities(session);
     } else if (value === "connecting") {
       setModuleStatus("nativeStatus", "CONNECTING", "amber");
+      setHostSetupStatus("Connecting to local agent...", "amber");
     } else {
       setModuleStatus("nativeStatus", "OFFLINE");
+      setHostSetupStatus("Agent disconnected — check PowerShell.", "red");
     }
   });
 
@@ -697,11 +744,13 @@ function setupNativeAgent(session) {
 
   agent.on("error", (detail) => {
     setModuleStatus("nativeStatus", "OFFLINE", "red");
+    setHostSetupStatus("Agent unavailable — check PowerShell and retry.", "red");
     logEvent(detail.code || "native_agent_error", detail, "error");
   });
 
   agent.connect().catch(() => {
     setModuleStatus("nativeStatus", "OFFLINE");
+    setHostSetupStatus("Agent unavailable — check PowerShell and retry.", "red");
   });
 }
 
@@ -1320,6 +1369,7 @@ async function disconnect() {
   const session = state.session;
   state.session = null;
   state.sessionStartedAt = 0;
+  setHostSetupStatus("Local agent not connected", "amber");
 
   if (state.nativeAgent) {
     try { state.nativeAgent.close(); } catch {}
@@ -1808,6 +1858,11 @@ function copy(value, label) {
 }
 
 function bindEvents() {
+  renderHostPowerShellCommands();
+  $("[data-action='copy-host-commands']")?.addEventListener("click", () => {
+    copy($("#hostPowerShellCommands")?.textContent || "", "PowerShell commands");
+  });
+  $("[data-action='retry-native-agent']")?.addEventListener("click", retryNativeAgent);
   window.addEventListener("hashchange", () => navigate(location.hash.slice(1) || "overview"));
 
   $$("[data-route]").forEach((link) => link.addEventListener("click", () => navigate(link.dataset.route)));
